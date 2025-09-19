@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-  {name = "RTX Labs"}
+  {name = "Andreas Fahl"}
 ]
 keywords = ["devops", "dotenv", "configuration", "validation", "cli"]
 classifiers = [
@@ -48,10 +48,10 @@ release = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rtx-labs/envkeep"
-Documentation = "https://rtx-labs.github.io/envkeep"
-Changelog = "https://github.com/rtx-labs/envkeep/blob/main/CHANGELOG.md"
-Issues = "https://github.com/rtx-labs/envkeep/issues"
+Homepage = "https://github.com/afadesigns/envkeep"
+Documentation = "https://afadesigns.github.io/envkeep"
+Changelog = "https://github.com/afadesigns/envkeep/blob/main/CHANGELOG.md"
+Issues = "https://github.com/afadesigns/envkeep/issues"
 
 [project.scripts]
 envkeep = "envkeep.cli:app"
@@ -112,4 +112,3 @@ show_missing = true
 [tool.black]
 line-length = 100
 skip-string-normalization = false
-

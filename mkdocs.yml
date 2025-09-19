@@ -1,7 +1,7 @@
 site_name: Envkeep
-site_url: https://rtx-labs.github.io/envkeep
-repo_url: https://github.com/rtx-labs/envkeep
-repo_name: rtx-labs/envkeep
+site_url: https://afadesigns.github.io/envkeep
+repo_url: https://github.com/afadesigns/envkeep
+repo_name: afadesigns/envkeep
 theme:
   name: material
   features:

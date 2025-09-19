@@ -62,3 +62,31 @@ def test_env_snapshot_duplicate_keys_preserve_order(tmp_path: Path) -> None:
     )
     snapshot = EnvSnapshot.from_env_file(env_file)
     assert snapshot.duplicate_keys() == ("FIRST", "SECOND")
+
+
+def test_env_snapshot_respects_escaped_hash_and_quotes() -> None:
+    raw = textwrap.dedent(
+        r"""
+        QUOTED="value # not a comment"
+        ESCAPED=foo\#bar
+        DOUBLE="value with \"quotes\" inside"
+        SINGLE='value with \# hash and spaces'
+        """
+    )
+    snapshot = EnvSnapshot.from_text(raw)
+    assert snapshot.get("QUOTED") == "value # not a comment"
+    assert snapshot.get("ESCAPED") == "foo#bar"
+    assert snapshot.get("DOUBLE") == 'value with "quotes" inside'
+    assert snapshot.get("SINGLE") == "value with # hash and spaces"
+
+
+def test_env_snapshot_marks_unterminated_quotes_invalid() -> None:
+    raw = textwrap.dedent(
+        """\
+        BROKEN="unterminated value
+        VALID=value
+        """
+    )
+    snapshot = EnvSnapshot.from_text(raw)
+    assert snapshot.get("VALID") == "value"
+    assert snapshot.malformed_lines() == ((1, 'BROKEN="unterminated value'),)

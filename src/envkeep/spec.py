@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import json
 import re
-import tomllib
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable
+from types import MappingProxyType
+from typing import Any, Iterable, Mapping
+
+try:  # pragma: no cover - runtime compatibility shim
+    import tomllib  # type: ignore[attr-defined]
+except ModuleNotFoundError:  # pragma: no cover - exercised in Python <3.11 test runtimes
+    import tomli as tomllib  # type: ignore[no-redef]
 from urllib.parse import urlparse
 
 from .report import DiffEntry, DiffKind, DiffReport, IssueSeverity, ValidationIssue, ValidationReport
@@ -178,8 +183,8 @@ class EnvSpec:
     variables: list[VariableSpec]
     profiles: list[ProfileSpec] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
-    _variable_cache: dict[str, VariableSpec] = field(init=False, repr=False)
-    _profile_cache: dict[str, ProfileSpec] = field(init=False, repr=False)
+    _variable_cache: Mapping[str, VariableSpec] = field(init=False, repr=False)
+    _profile_cache: Mapping[str, ProfileSpec] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._rebuild_caches()
@@ -202,7 +207,7 @@ class EnvSpec:
         _assert_unique([profile.name for profile in profiles], entity="profile")
         return cls(version=version, variables=variables, profiles=profiles, metadata=dict(metadata))
 
-    def variable_map(self) -> dict[str, VariableSpec]:
+    def variable_map(self) -> Mapping[str, VariableSpec]:
         return self._variable_cache
 
     def validate(self, snapshot: EnvSnapshot, *, allow_extra: bool = False) -> ValidationReport:
@@ -321,7 +326,7 @@ class EnvSpec:
             lines.append("")
         return "\n".join(lines).strip() + "\n"
 
-    def profiles_by_name(self) -> dict[str, ProfileSpec]:
+    def profiles_by_name(self) -> Mapping[str, ProfileSpec]:
         return self._profile_cache
 
     def iter_profiles(self) -> Iterable[ProfileSpec]:
@@ -336,5 +341,5 @@ class EnvSpec:
         }
 
     def _rebuild_caches(self) -> None:
-        self._variable_cache = {variable.name: variable for variable in self.variables}
-        self._profile_cache = {profile.name: profile for profile in self.profiles}
+        self._variable_cache = MappingProxyType({variable.name: variable for variable in self.variables})
+        self._profile_cache = MappingProxyType({profile.name: profile for profile in self.profiles})

@@ -1,9 +1,9 @@
 # Envkeep
 
-[![CI](https://github.com/rtx-labs/envkeep/actions/workflows/ci.yml/badge.svg)](https://github.com/rtx-labs/envkeep/actions/workflows/ci.yml)
-[![Release](https://github.com/rtx-labs/envkeep/actions/workflows/release.yml/badge.svg)](https://github.com/rtx-labs/envkeep/actions/workflows/release.yml)
+[![CI](https://github.com/afadesigns/envkeep/actions/workflows/ci.yml/badge.svg)](https://github.com/afadesigns/envkeep/actions/workflows/ci.yml)
+[![Release](https://github.com/afadesigns/envkeep/actions/workflows/release.yml/badge.svg)](https://github.com/afadesigns/envkeep/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://rtx-labs.github.io/envkeep)
+[![Docs](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://afadesigns.github.io/envkeep)
 
 Typed environment specifications, drift detection, and CLI tooling for teams who rely on `.env` files. Envkeep keeps every environment stage aligned without adopting a heavyweight configuration framework.
 
@@ -45,11 +45,14 @@ Total differences: 1
 4. Diff environments: `envkeep diff .env staging.env --spec envkeep.toml`
 5. Generate example: `envkeep generate --spec envkeep.toml --output .env.example`
 
+Pipe specs directly from tooling with `--spec -` (for example, `cat envkeep.toml | envkeep check .env --spec -`) and explore metadata via `envkeep inspect --format json` when automating reviews.
+
 See [`examples/basic`](examples/basic) for a complete spec and environment pair.
 
 ## Features
 - Typed spec parsing with validation for defaults, patterns, and enumerated values.
 - Human-friendly and machine-readable reports (`--format text|json`).
+- Rich inspection tooling to summarize variables and profiles (`envkeep inspect`, JSON-ready output).
 - Secrets-aware diffing that redacts sensitive values.
 - Profiles support for multi-stage environments validated via `envkeep doctor`.
 - MkDocs-powered documentation with mkdocstrings API reference.

@@ -41,10 +41,34 @@ envkeep check .env --spec envkeep.toml
 
 Exit code `0` indicates success. Non-zero exits mean issues were found; see the accompanying table for details.
 
+Need to keep literal `#` characters or quotes in your values? Escape them (for example, `API_KEY=foo\#bar` or `NAME="Acme \"Beta\""`) and Envkeep will preserve the intended content while still flagging malformed or unterminated quotes as warnings during validation.
+
+If you prefer streaming specs from other tooling, pipe them straight into the CLI with `--spec -`:
+
+```bash
+cat envkeep.toml | envkeep check .env --spec -
+```
+
 ## Generate Examples
 
 ```bash
 envkeep generate --spec envkeep.toml --output .env.example
+```
+
+Add `--no-redact-secrets` if you need actual default values for variables marked as secret.
+
+## Inspect Specifications
+
+Review variable metadata and profiles with a single command:
+
+```bash
+envkeep inspect --spec envkeep.toml
+```
+
+Need machine-readable output for automation? Switch to JSON:
+
+```bash
+envkeep inspect --spec envkeep.toml --format json | jq '.summary'
 ```
 
 ## Explore Examples

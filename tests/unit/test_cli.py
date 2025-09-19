@@ -45,6 +45,24 @@ def test_cli_check_json_summary() -> None:
     assert payload["summary"]["severity_totals"]["warning"] == 0
 
 
+def test_cli_rejects_unknown_format(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(DEV_ENV.read_text(), encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "check",
+            str(env_file),
+            "--spec",
+            str(EXAMPLE_SPEC),
+            "--format",
+            "yaml",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "Invalid value for '--format'" in result.stdout
+
+
 def test_cli_check_fail_on_warnings(tmp_path: Path) -> None:
     env_file = tmp_path / "warn.env"
     env_file.write_text(
@@ -200,6 +218,25 @@ def test_cli_doctor_fail_on_warnings(tmp_path: Path) -> None:
     assert result.exit_code == 1
 
 
+def test_cli_reports_toml_parse_location(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(DEV_ENV.read_text(), encoding="utf-8")
+    bad_spec = tmp_path / "broken.toml"
+    bad_spec.write_text("version =\n", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "check",
+            str(env_file),
+            "--spec",
+            str(bad_spec),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "failed to parse spec" in result.stdout
+    assert "line 1" in result.stdout
+
+
 def test_cli_doctor_json_warnings(tmp_path: Path) -> None:
     env_file = tmp_path / "warn.env"
     env_file.write_text(
@@ -295,3 +332,76 @@ def test_cli_diff_json_summary(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["summary"]["by_kind"]["changed"] == 0
+
+
+def test_cli_check_supports_spec_from_stdin(tmp_path: Path) -> None:
+    env_file = tmp_path / "from-stdin.env"
+    env_file.write_text(DEV_ENV.read_text(), encoding="utf-8")
+    spec_text = EXAMPLE_SPEC.read_text(encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "check",
+            str(env_file),
+            "--spec",
+            "-",
+        ],
+        input=spec_text,
+    )
+    assert result.exit_code == 0
+    assert "All checks passed" in result.stdout
+
+
+def test_cli_check_rejects_double_stdin(tmp_path: Path) -> None:
+    spec_text = EXAMPLE_SPEC.read_text(encoding="utf-8")
+    env_text = DEV_ENV.read_text(encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "check",
+            "-",
+            "--spec",
+            "-",
+        ],
+        input=spec_text + env_text,
+    )
+    assert result.exit_code != 0
+    assert "cannot read both spec and environment from stdin" in result.stderr
+
+
+def test_cli_diff_rejects_spec_and_env_stdin(tmp_path: Path) -> None:
+    left = tmp_path / "left.env"
+    left.write_text(DEV_ENV.read_text(), encoding="utf-8")
+    spec_text = EXAMPLE_SPEC.read_text(encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "diff",
+            "-",
+            str(left),
+            "--spec",
+            "-",
+        ],
+        input=spec_text,
+    )
+    assert result.exit_code != 0
+    assert "cannot combine spec from stdin" in result.stderr
+
+
+def test_cli_inspect_json_output() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "inspect",
+            "--spec",
+            str(EXAMPLE_SPEC),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["version"] == 1
+    first_variable = payload["variables"][0]
+    assert first_variable["name"] == "DATABASE_URL"
+    assert "profiles" in payload

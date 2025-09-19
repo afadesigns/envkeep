@@ -150,3 +150,15 @@ def test_spec_rejects_duplicate_profiles() -> None:
     }
     with pytest.raises(ValueError, match="duplicate profile declared: same"):
         EnvSpec.from_dict(data)
+
+
+def test_spec_maps_are_read_only() -> None:
+    spec = EnvSpec.from_file(EXAMPLE_SPEC)
+    variables = spec.variable_map()
+    profiles = spec.profiles_by_name()
+    assert "DATABASE_URL" in variables
+    assert "development" in profiles
+    with pytest.raises(TypeError):
+        variables["NEW"] = spec.variables[0]
+    with pytest.raises(TypeError):
+        profiles["staging"] = spec.profiles[0]

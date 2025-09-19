@@ -2,84 +2,288 @@ from __future__ import annotations
 
 import json
 import sys
+from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any, Optional
+
+try:  # pragma: no cover - runtime compatibility shim
+    import tomllib  # type: ignore[attr-defined]
+except ModuleNotFoundError:  # pragma: no cover - exercised in Python <3.11 test runtimes
+    import tomli as tomllib  # type: ignore[no-redef]
+
+import warnings
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from .report import DiffReport, IssueSeverity, ValidationReport
+from .report import DiffReport, IssueSeverity, ValidationIssue, ValidationReport
 from .snapshot import EnvSnapshot
 from .spec import EnvSpec
+
+try:  # pragma: no cover - Click 8.0 compatibility
+    from click._utils import UNSET as _CLICK_UNSET
+except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
+    _CLICK_UNSET = None
+
+if _CLICK_UNSET is None:  # pragma: no cover - Typer >=0.12 on newer Click versions
+    warnings.filterwarnings(
+        "ignore",
+        message="The 'is_flag' and 'flag_value' parameters are not supported by Typer",
+        category=DeprecationWarning,
+    )
 
 app = typer.Typer(help="Deterministic environment spec and drift detection for .env workflows.")
 console = Console()
 
+class OutputFormat(str, Enum):
+    TEXT = "text"
+    JSON = "json"
 
-def load_spec(path: Path) -> EnvSpec:
+
+def _parse_output_format(value: OutputFormat | str) -> OutputFormat:
+    if isinstance(value, OutputFormat):
+        return value
     try:
+        return OutputFormat(str(value).lower())
+    except ValueError as exc:
+        allowed = ", ".join(fmt.value for fmt in OutputFormat)
+        raise typer.BadParameter(
+            f"Invalid value for '--format': output format must be one of: {allowed}"
+        ) from exc
+
+
+def _option_with_value(*args: Any, **kwargs: Any) -> typer.models.OptionInfo:
+    option = typer.Option(*args, **kwargs)
+    if _CLICK_UNSET is not None:
+        option.flag_value = _CLICK_UNSET  # Click <8.1 treats flag_value=None as a boolean flag
+    return option
+
+
+def _coerce_output_format(raw: str) -> OutputFormat:
+    try:
+        return _parse_output_format(raw)
+    except typer.BadParameter as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=2) from exc
+
+
+def _format_option() -> typer.models.OptionInfo:
+    option = _option_with_value(
+        "text",
+        "--format",
+        "-f",
+        help="Output format: text or json.",
+    )
+    option.case_sensitive = False
+    return option
+
+
+def _spec_option() -> typer.models.OptionInfo:
+    return _option_with_value(Path("envkeep.toml"), "--spec", "-s", help="Path to envkeep spec.")
+
+
+def _profile_option() -> typer.models.OptionInfo:
+    option = _option_with_value(
+        "all",
+        "--profile",
+        "-p",
+        help="Profile to validate (all to run every profile).",
+    )
+    option.show_default = True
+    return option
+
+
+def _emit_json(payload: Any) -> None:
+    typer.echo(json.dumps(payload, indent=2))
+
+
+def _handle_validation_output(
+    report: ValidationReport,
+    *,
+    source: str,
+    output_format: OutputFormat,
+    fail_on_warnings: bool,
+) -> int:
+    if output_format is OutputFormat.JSON:
+        payload = {"report": report.to_dict(), "summary": report.summary()}
+        _emit_json(payload)
+    else:
+        render_validation_report(report, source=source)
+    exit_code = 0
+    if not report.is_success or (fail_on_warnings and report.warning_count > 0):
+        exit_code = 1
+    return exit_code
+
+
+def _handle_diff_output(
+    report: DiffReport,
+    *,
+    left: str,
+    right: str,
+    output_format: OutputFormat,
+) -> int:
+    if output_format is OutputFormat.JSON:
+        payload = {"report": report.to_dict(), "summary": report.summary()}
+        _emit_json(payload)
+    else:
+        render_diff_report(report, left=left, right=right)
+    return 0 if report.is_clean() else 1
+
+
+def _inject_extra_warnings(
+    report: ValidationReport,
+    snapshot: EnvSnapshot,
+    env_spec: EnvSpec,
+    *,
+    allow_extra: bool,
+) -> None:
+    if allow_extra:
+        return
+    if any(issue.code == "extra" for issue in report.issues):
+        return
+    variable_names = env_spec.variable_map().keys()
+    for key in snapshot.keys():
+        if key in variable_names:
+            continue
+        report.add(
+            ValidationIssue(
+                variable=key,
+                message="variable not declared in spec",
+                severity=IssueSeverity.WARNING,
+                code="extra",
+                hint="Add it to envkeep.toml or remove it from the environment.",
+            )
+        )
+
+
+def _emit_doctor_json(
+    results: list[dict[str, Any]],
+    *,
+    allow_extra: bool,
+    fail_on_warnings: bool,
+) -> None:
+    severity_totals = {
+        IssueSeverity.ERROR.value: 0,
+        IssueSeverity.WARNING.value: 0,
+        IssueSeverity.INFO.value: 0,
+    }
+    successes = 0
+    missing_profiles = sum(1 for item in results if "error" in item)
+    for item in results:
+        summary = item.get("summary")
+        if not summary:
+            continue
+        successes += 1
+        for key, value in summary["severity_totals"].items():
+            severity_totals[key] += value
+    summary_payload = {
+        "profiles_with_reports": successes,
+        "missing_profiles": missing_profiles,
+        "severity_totals": severity_totals,
+        "is_success": successes > 0
+        and all(item["summary"]["is_success"] for item in results if "summary" in item)
+        and all("error" not in item for item in results),
+    }
+    payload = {
+        "profiles": results,
+        "allow_extra": allow_extra,
+        "fail_on_warnings": fail_on_warnings,
+        "summary": summary_payload,
+    }
+    _emit_json(payload)
+
+
+def load_spec(path: Path, *, stdin_data: str | None = None) -> EnvSpec:
+    path_str = str(path)
+    try:
+        if path_str == "-":
+            content = stdin_data if stdin_data is not None else sys.stdin.read()
+            if not content.strip():
+                raise typer.BadParameter("spec input from stdin is empty")
+            data = tomllib.loads(content)
+            return EnvSpec.from_dict(data)
         return EnvSpec.from_file(path)
     except FileNotFoundError as exc:  # pragma: no cover - Typer handles message but keep guard
         raise typer.BadParameter(f"spec file not found: {path}") from exc
+    except tomllib.TOMLDecodeError as exc:  # pragma: no cover - exercised via CLI tests
+        detail = getattr(exc, "msg", str(exc))
+        line = getattr(exc, "lineno", None)
+        col = getattr(exc, "colno", None)
+        if line is not None and col is not None:
+            detail = f"{detail} (line {line}, column {col})"
+        message = f"failed to parse spec: {detail}"
+        typer.echo(message)
+        raise typer.BadParameter(message) from exc
     except Exception as exc:  # pragma: no cover - defensive
         raise typer.BadParameter(f"failed to load spec: {exc}") from exc
 
 
 @app.command()
 def check(
-    env_file: Annotated[Path, typer.Argument(help="Path to the environment file.")],
-    spec: Annotated[Path, typer.Option("--spec", "-s", help="Path to envkeep spec.")] = Path("envkeep.toml"),
-    output_format: Annotated[
-        str,
-        typer.Option("--format", "-f", case_sensitive=False, help="Output format: text or json."),
-    ] = "text",
-    allow_extra: Annotated[bool, typer.Option(help="Allow variables not declared in the spec.")] = False,
-    fail_on_warnings: Annotated[
-        bool,
-        typer.Option(
-            "--fail-on-warnings/--no-fail-on-warnings",
-            help="Treat warnings as errors for CI enforcement.",
-        ),
-    ] = False,
+    env_file: Path = typer.Argument(..., help="Path to the environment file."),
+    spec: Path = _spec_option(),
+    output_format: str = _format_option(),
+    allow_extra: bool = typer.Option(
+        False,
+        "--allow-extra",
+        help="Allow variables not declared in the spec.",
+        is_flag=True,
+        flag_value=True,
+    ),
+    fail_on_warnings: bool = typer.Option(
+        False,
+        "--fail-on-warnings",
+        help="Treat warnings as errors for CI enforcement.",
+        is_flag=True,
+        flag_value=True,
+    ),
 ) -> None:
     """Validate an environment against the specification."""
 
-    env_spec = load_spec(spec)
-    if str(env_file) == "-":
+    env_path = str(env_file)
+    spec_path = str(spec)
+    if spec_path == "-" and env_path == "-":
+        raise typer.BadParameter("cannot read both spec and environment from stdin")
+    stdin_spec: str | None = None
+    if spec_path == "-":
+        stdin_spec = sys.stdin.read()
+    env_spec = load_spec(spec, stdin_data=stdin_spec)
+    if env_path == "-":
         data = sys.stdin.read()
         snapshot = EnvSnapshot.from_text(data, source="stdin")
     else:
         snapshot = EnvSnapshot.from_env_file(env_file)
     report = env_spec.validate(snapshot, allow_extra=allow_extra)
-    if output_format.lower() == "json":
-        payload = {
-            "report": report.to_dict(),
-            "summary": report.summary(),
-        }
-        typer.echo(json.dumps(payload, indent=2))
-    else:
-        render_validation_report(report, source=str(env_file))
-    exit_code = 0
-    if not report.is_success or (fail_on_warnings and report.warning_count > 0):
-        exit_code = 1
+    _inject_extra_warnings(report, snapshot, env_spec, allow_extra=allow_extra)
+    fmt = _coerce_output_format(output_format)
+    exit_code = _handle_validation_output(
+        report,
+        source=str(env_file),
+        output_format=fmt,
+        fail_on_warnings=fail_on_warnings,
+    )
     raise typer.Exit(code=exit_code)
 
 
 @app.command()
 def diff(
-    first: Annotated[Path, typer.Argument(help="Baseline environment file.")],
-    second: Annotated[Path, typer.Argument(help="Target environment file.")],
-    spec: Annotated[Path, typer.Option("--spec", "-s", help="Path to envkeep spec.")] = Path("envkeep.toml"),
-    output_format: Annotated[
-        str, typer.Option("--format", "-f", case_sensitive=False, help="Output format: text or json.")
-    ] = "text",
+    first: Path = typer.Argument(..., help="Baseline environment file."),
+    second: Path = typer.Argument(..., help="Target environment file."),
+    spec: Path = _spec_option(),
+    output_format: str = _format_option(),
 ) -> None:
     """Compare two environment files using the spec for normalization."""
 
-    env_spec = load_spec(spec)
-    stdin_buffer: str | None = None
+    spec_path = str(spec)
     minus_count = sum(1 for candidate in (str(first), str(second)) if candidate == "-")
+    if spec_path == "-" and minus_count:
+        raise typer.BadParameter("cannot combine spec from stdin with environment stdin input")
+    stdin_spec: str | None = None
+    if spec_path == "-":
+        stdin_spec = sys.stdin.read()
+    env_spec = load_spec(spec, stdin_data=stdin_spec)
+    stdin_buffer: str | None = None
     if minus_count > 1:
         raise typer.BadParameter("stdin can only be supplied for one file in diff.")
 
@@ -94,27 +298,37 @@ def diff(
     left = load_snapshot(first, label="left")
     right = load_snapshot(second, label="right")
     report = env_spec.diff(left, right)
-    if output_format.lower() == "json":
-        payload = {
-            "report": report.to_dict(),
-            "summary": report.summary(),
-        }
-        typer.echo(json.dumps(payload, indent=2))
-    else:
-        render_diff_report(report, left=str(first), right=str(second))
-    raise typer.Exit(code=0 if report.is_clean() else 1)
+    fmt = _coerce_output_format(output_format)
+    exit_code = _handle_diff_output(
+        report,
+        left=str(first),
+        right=str(second),
+        output_format=fmt,
+    )
+    raise typer.Exit(code=exit_code)
 
 
 @app.command()
 def generate(
-    spec: Annotated[Path, typer.Option("--spec", "-s", help="Path to envkeep spec.")] = Path("envkeep.toml"),
-    output: Annotated[Path | None, typer.Option("--output", "-o", help="Where to write the generated file.")] = None,
-    redact_secrets: Annotated[bool, typer.Option(help="Mask variables marked as secret.")] = True,
+    spec: Path = _spec_option(),
+    output: Optional[Path] = _option_with_value(
+        None,
+        "--output",
+        "-o",
+        help="Where to write the generated file.",
+    ),
+    no_redact_secrets: bool = typer.Option(
+        False,
+        "--no-redact-secrets",
+        help="Disable masking for variables marked as secret.",
+        is_flag=True,
+        flag_value=True,
+    ),
 ) -> None:
     """Generate a sanitized .env example from the spec."""
 
     env_spec = load_spec(spec)
-    content = env_spec.generate_example(redact_secrets=redact_secrets)
+    content = env_spec.generate_example(redact_secrets=not no_redact_secrets)
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(content, encoding="utf-8")
@@ -125,11 +339,44 @@ def generate(
 
 @app.command()
 def inspect(
-    spec: Annotated[Path, typer.Option("--spec", "-s", help="Path to envkeep spec.")] = Path("envkeep.toml")
+    spec: Path = _spec_option(),
+    output_format: str = _format_option(),
 ) -> None:
     """Print a summary of variables and profiles declared in the spec."""
 
     env_spec = load_spec(spec)
+    fmt = _coerce_output_format(output_format)
+    if fmt is OutputFormat.JSON:
+        variables_payload = [
+            {
+                "name": variable.name,
+                "type": variable.var_type.value,
+                "required": variable.required,
+                "secret": variable.secret,
+                "description": variable.description,
+                "default": variable.default,
+                "choices": list(variable.choices),
+                "pattern": variable.pattern.pattern if variable.pattern else None,
+                "example": variable.example,
+                "allow_empty": variable.allow_empty,
+            }
+            for variable in env_spec.variables
+        ]
+        profiles_payload = [
+            {
+                "name": profile.name,
+                "env_file": profile.env_file,
+                "description": profile.description,
+            }
+            for profile in env_spec.profiles
+        ]
+        payload = {
+            "summary": env_spec.summary(),
+            "variables": variables_payload,
+            "profiles": profiles_payload,
+        }
+        _emit_json(payload)
+        return
     table = Table(title=f"Envkeep Summary (version {env_spec.version})")
     table.add_column("Variable")
     table.add_column("Type")
@@ -160,23 +407,23 @@ def inspect(
 
 @app.command()
 def doctor(
-    spec: Annotated[Path, typer.Option("--spec", "-s", help="Path to envkeep spec.")] = Path("envkeep.toml"),
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Profile to validate (all to run every profile).", show_default=True),
-    ] = "all",
-    allow_extra: Annotated[bool, typer.Option(help="Allow extra variables when validating profiles.")] = False,
-    output_format: Annotated[
-        str,
-        typer.Option("--format", "-f", case_sensitive=False, help="Output format: text or json."),
-    ] = "text",
-    fail_on_warnings: Annotated[
-        bool,
-        typer.Option(
-            "--fail-on-warnings/--no-fail-on-warnings",
-            help="Fail when any profile emits warnings.",
-        ),
-    ] = False,
+    spec: Path = _spec_option(),
+    profile: str = _profile_option(),
+    allow_extra: bool = typer.Option(
+        False,
+        "--allow-extra",
+        help="Allow extra variables when validating profiles.",
+        is_flag=True,
+        flag_value=True,
+    ),
+    output_format: str = _format_option(),
+    fail_on_warnings: bool = typer.Option(
+        False,
+        "--fail-on-warnings",
+        help="Fail when any profile emits warnings.",
+        is_flag=True,
+        flag_value=True,
+    ),
 ) -> None:
     """Validate one or more profiles declared in the spec."""
 
@@ -197,11 +444,12 @@ def doctor(
         selected = [(item.name, Path(item.env_file))]
 
     exit_code = 0
-    output_mode = output_format.lower()
+    fmt = _coerce_output_format(output_format)
+    use_json = fmt is OutputFormat.JSON
     results: list[dict[str, Any]] = []
     for name, env_path in selected:
         if not env_path.exists():
-            if output_mode == "json":
+            if use_json:
                 results.append({
                     "profile": name,
                     "path": str(env_path),
@@ -213,7 +461,8 @@ def doctor(
             continue
         snapshot = EnvSnapshot.from_env_file(env_path)
         report = env_spec.validate(snapshot, allow_extra=allow_extra)
-        if output_mode == "json":
+        _inject_extra_warnings(report, snapshot, env_spec, allow_extra=allow_extra)
+        if use_json:
             summary = report.summary()
             results.append({
                 "profile": name,
@@ -227,36 +476,8 @@ def doctor(
             render_validation_report(report, source=str(env_path))
         if not report.is_success or (fail_on_warnings and report.warning_count > 0):
             exit_code = 1
-    if output_mode == "json":
-        severity_totals = {
-            IssueSeverity.ERROR.value: 0,
-            IssueSeverity.WARNING.value: 0,
-            IssueSeverity.INFO.value: 0,
-        }
-        successes = 0
-        missing_profiles = sum(1 for item in results if "error" in item)
-        for item in results:
-            summary = item.get("summary")
-            if not summary:
-                continue
-            successes += 1
-            for key, value in summary["severity_totals"].items():
-                severity_totals[key] += value
-        summary_payload = {
-            "profiles_with_reports": successes,
-            "missing_profiles": missing_profiles,
-            "severity_totals": severity_totals,
-            "is_success": successes > 0 and all(
-                item["summary"]["is_success"] for item in results if "summary" in item
-            ) and all("error" not in item for item in results),
-        }
-        payload = {
-            "profiles": results,
-            "allow_extra": allow_extra,
-            "fail_on_warnings": fail_on_warnings,
-            "summary": summary_payload,
-        }
-        typer.echo(json.dumps(payload, indent=2))
+    if use_json:
+        _emit_doctor_json(results, allow_extra=allow_extra, fail_on_warnings=fail_on_warnings)
     raise typer.Exit(code=exit_code)
 
 

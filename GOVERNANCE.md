@@ -3,7 +3,7 @@
 Envkeep follows a lightweight stewardship model.
 
 ## Roles
-- **Maintainers**: Responsible for roadmap curation, release management, and reviewing contributions. Current maintainers are members of the @rtx-labs/platform team.
+- **Maintainers**: Responsible for roadmap curation, release management, and reviewing contributions. The current maintainer is Andreas Fahl (@afadesigns).
 - **Contributors**: Anyone submitting issues, patches, or documentation updates.
 - **Advisors**: Trusted community members consulted on major changes (breaking APIs, security posture).
 
@@ -17,4 +17,4 @@ Envkeep follows a lightweight stewardship model.
 - Patch releases focus on bug fixes; minor releases may add features; major releases can include breaking changes.
 
 ## Escalation
-If no maintainer responds to a critical issue within 72 hours, email maintainers@rtx-labs.com to escalate.
+If no maintainer responds to a critical issue within 72 hours, open a discussion or issue and mention @afadesigns for visibility.

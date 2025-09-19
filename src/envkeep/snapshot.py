@@ -107,13 +107,16 @@ def _parse_env(raw: str) -> tuple[dict[str, str], tuple[str, ...], tuple[tuple[i
         key = match.group("key")
         value = match.group("value")
         processed = _sanitize_value(value)
+        if processed is None:
+            invalid.append((index, line.rstrip("\n")))
+            continue
         if key in result:
             duplicates.append(key)
         result[key] = _unescape(processed)
     return result, tuple(duplicates), tuple(invalid)
 
 
-def _sanitize_value(value: str) -> str:
+def _sanitize_value(value: str) -> str | None:
     trimmed = value.strip()
     if not trimmed:
         return ""
@@ -121,6 +124,7 @@ def _sanitize_value(value: str) -> str:
         quote = trimmed[0]
         idx = 1
         buffer: list[str] = []
+        closed = False
         while idx < len(trimmed):
             char = trimmed[idx]
             if char == "\\":
@@ -133,10 +137,13 @@ def _sanitize_value(value: str) -> str:
                 idx += 1
                 continue
             if char == quote:
+                closed = True
                 idx += 1
                 break
             buffer.append(char)
             idx += 1
+        if not closed:
+            return None
         remainder = trimmed[idx:].strip()
         if remainder and not remainder.startswith("#"):
             remainder = _strip_inline_comment(remainder)
@@ -150,15 +157,54 @@ def _sanitize_value(value: str) -> str:
 def _strip_inline_comment(value: str) -> str:
     in_single = False
     in_double = False
+    escaped = False
     for idx, char in enumerate(value):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
         if char == "'" and not in_double:
             in_single = not in_single
-        elif char == '"' and not in_single:
+            continue
+        if char == '"' and not in_single:
             in_double = not in_double
-        elif char == "#" and not in_single and not in_double:
+            continue
+        if char == "#" and not in_single and not in_double:
             return value[:idx].rstrip()
-    return value
+    return value.rstrip()
 
 
 def _unescape(value: str) -> str:
-    return value.replace("\\n", "\n").replace("\\t", "\t")
+    result: list[str] = []
+    idx = 0
+    length = len(value)
+    while idx < length:
+        char = value[idx]
+        if char != "\\":
+            result.append(char)
+            idx += 1
+            continue
+        idx += 1
+        if idx >= length:
+            result.append("\\")
+            break
+        escape_char = value[idx]
+        mapping = {
+            "n": "\n",
+            "r": "\r",
+            "t": "\t",
+            '"': '"',
+            "'": "'",
+            "\\": "\\",
+            "#": "#",
+        }
+        replacement = mapping.get(escape_char)
+        if replacement is None:
+            result.append("\\")
+            result.append(escape_char)
+        else:
+            result.append(replacement)
+        idx += 1
+    return "".join(result)
