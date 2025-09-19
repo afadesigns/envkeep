@@ -1,0 +1,40 @@
+name: Bug report
+about: Help us fix a problem
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+  - type: input
+    id: version
+    attributes:
+      label: Envkeep version
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include expected vs actual behavior and logs if available.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal spec/env pair to reproduce the issue.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platforms impacted
+      multiple: true
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true

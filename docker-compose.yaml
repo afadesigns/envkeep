@@ -1,0 +1,7 @@
+services:
+  envkeep:
+    build: .
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    entrypoint: ["envkeep"]

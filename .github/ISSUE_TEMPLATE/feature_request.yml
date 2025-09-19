@@ -1,0 +1,29 @@
+name: Feature request
+about: Suggest an idea for Envkeep
+labels: [enhancement]
+body:
+  - type: input
+    id: motivation
+    attributes:
+      label: What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior and API/CLI changes.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: contributions
+    attributes:
+      label: Willing to contribute?
+      options:
+        - label: Yes, I'd like to open a PR
+        - label: I'd like to pair with a maintainer
+        - label: Interested in sponsorship

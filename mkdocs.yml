@@ -1,0 +1,44 @@
+site_name: Envkeep
+site_url: https://rtx-labs.github.io/envkeep
+repo_url: https://github.com/rtx-labs/envkeep
+repo_name: rtx-labs/envkeep
+theme:
+  name: material
+  features:
+    - navigation.top
+    - navigation.tabs
+    - content.code.copy
+    - content.tabs.link
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+nav:
+  - Overview: index.md
+  - Getting Started: guides/getting-started.md
+  - CLI Reference: reference/cli.md
+  - Python API: reference/api.md
+  - Research: research.md
+  - Product Spec: product-spec.md
+  - How-to:
+      - CI Enforcement: how-to/ci-enforcement.md
+      - Generate Examples: how-to/generate-examples.md
+  - Benchmarks: benchmarks.md
+  - Operational Docs:
+      - Achievement Plan: achievement-plan.md
+      - Post-Publish Checklist: post-publish-checklist.md
+      - Growth KPIs: growth-metrics.md
+      - Maintenance Plan: maintenance-plan.md
+  - Contributing: ../CONTRIBUTING.md
+  - Changelog: ../CHANGELOG.md
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false

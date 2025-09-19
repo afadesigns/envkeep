@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.env.*
+.venv/
+venv/
+.build/
+dist/
+build/
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+.cache/
+benchmarks/.benchmarks/
+.dmypy.json
+.idea/
+.vscode/
+.DS_Store
+.site/
+*.egg-info/
+.eggs/
+# MkDocs
+/site/

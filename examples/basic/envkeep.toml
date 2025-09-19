@@ -1,0 +1,41 @@
+version = 1
+
+[metadata]
+name = "Example Service"
+
+[[variables]]
+name = "DATABASE_URL"
+type = "url"
+required = true
+secret = true
+description = "Primary Postgres connection string"
+
+[[variables]]
+name = "DEBUG"
+type = "bool"
+default = false
+description = "Toggle debug features"
+
+[[variables]]
+name = "ALLOWED_HOSTS"
+type = "list"
+default = "localhost,example.com"
+description = "Comma-separated host allowlist"
+
+[[variables]]
+name = "API_TOKEN"
+type = "string"
+required = true
+secret = true
+description = "External API token"
+pattern = "^[A-Z0-9]{32}$"
+
+[[profiles]]
+name = "development"
+env_file = "examples/basic/.env.dev"
+description = "Developer workstation"
+
+[[profiles]]
+name = "production"
+env_file = "examples/basic/.env.prod"
+description = "Production deployment"
