@@ -16,12 +16,14 @@ envkeep check path/to/.env --spec envkeep.toml --format json
 Options:
 - `--format text|json` (default `text`)
 - `--allow-extra` to ignore undeclared variables
+- `--fail-on-warnings` to make any warnings exit non-zero (e.g., duplicate or invalid lines)
 
 Exit codes:
 - `0` – success
 - `1` – errors found
 
 `envkeep check` also emits warnings for duplicate key declarations so that drift is caught early.
+Pass `-` instead of a path to read the environment from `stdin` (useful in pipelines).
 
 ## `envkeep diff`
 Compare two environment files with normalization and secret redaction.
@@ -60,6 +62,7 @@ Options:
 - `--profile all|NAME` (default `all`)
 - `--allow-extra` to suppress warnings for undeclared variables
 - `--format text|json` (default `text`) for machine-readable summaries
+- `--fail-on-warnings` to fail the run if any profile reports warnings
 
 Exit code aggregates results across profiles (non-zero if any profile fails).
-With `--format json`, the command prints an object containing each profile report and omits the Rich table output.
+With `--format json`, the command prints an object containing each profile report and omits the Rich table output. The `warnings` field includes duplicate keys, extra variables, and malformed line metadata for downstream automation.

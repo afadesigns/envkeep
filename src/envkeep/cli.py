@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -34,17 +35,31 @@ def check(
         typer.Option("--format", "-f", case_sensitive=False, help="Output format: text or json."),
     ] = "text",
     allow_extra: Annotated[bool, typer.Option(help="Allow variables not declared in the spec.")] = False,
+    fail_on_warnings: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-warnings/--no-fail-on-warnings",
+            help="Treat warnings as errors for CI enforcement.",
+        ),
+    ] = False,
 ) -> None:
     """Validate an environment against the specification."""
 
     env_spec = load_spec(spec)
-    snapshot = EnvSnapshot.from_env_file(env_file)
+    if str(env_file) == "-":
+        data = sys.stdin.read()
+        snapshot = EnvSnapshot.from_text(data, source="stdin")
+    else:
+        snapshot = EnvSnapshot.from_env_file(env_file)
     report = env_spec.validate(snapshot, allow_extra=allow_extra)
     if output_format.lower() == "json":
         typer.echo(json.dumps(report.to_dict(), indent=2))
     else:
         render_validation_report(report, source=str(env_file))
-    raise typer.Exit(code=0 if report.is_success else 1)
+    exit_code = 0
+    if not report.is_success or (fail_on_warnings and report.warning_count > 0):
+        exit_code = 1
+    raise typer.Exit(code=exit_code)
 
 
 @app.command()
@@ -59,8 +74,21 @@ def diff(
     """Compare two environment files using the spec for normalization."""
 
     env_spec = load_spec(spec)
-    left = EnvSnapshot.from_env_file(first)
-    right = EnvSnapshot.from_env_file(second)
+    stdin_buffer: str | None = None
+    minus_count = sum(1 for candidate in (str(first), str(second)) if candidate == "-")
+    if minus_count > 1:
+        raise typer.BadParameter("stdin can only be supplied for one file in diff.")
+
+    def load_snapshot(path: Path, *, label: str) -> EnvSnapshot:
+        nonlocal stdin_buffer
+        if str(path) == "-":
+            if stdin_buffer is None:
+                stdin_buffer = sys.stdin.read()
+            return EnvSnapshot.from_text(stdin_buffer, source=f"stdin:{label}")
+        return EnvSnapshot.from_env_file(path)
+
+    left = load_snapshot(first, label="left")
+    right = load_snapshot(second, label="right")
     report = env_spec.diff(left, right)
     if output_format.lower() == "json":
         typer.echo(json.dumps(report.to_dict(), indent=2))
@@ -134,6 +162,13 @@ def doctor(
         str,
         typer.Option("--format", "-f", case_sensitive=False, help="Output format: text or json."),
     ] = "text",
+    fail_on_warnings: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-warnings/--no-fail-on-warnings",
+            help="Fail when any profile emits warnings.",
+        ),
+    ] = False,
 ) -> None:
     """Validate one or more profiles declared in the spec."""
 
@@ -175,19 +210,37 @@ def doctor(
                 "profile": name,
                 "path": str(env_path),
                 "report": report.to_dict(),
+                "warnings": _summarize_warnings(report),
             })
         else:
             console.rule(f"Profile: {name}")
             render_validation_report(report, source=str(env_path))
-        if not report.is_success:
+        if not report.is_success or (fail_on_warnings and report.warning_count > 0):
             exit_code = 1
     if output_mode == "json":
         payload = {
             "profiles": results,
             "allow_extra": allow_extra,
+            "fail_on_warnings": fail_on_warnings,
         }
         typer.echo(json.dumps(payload, indent=2))
     raise typer.Exit(code=exit_code)
+
+
+def _summarize_warnings(report: ValidationReport) -> dict[str, Any]:
+    duplicates = [issue.variable for issue in report.issues if issue.code == "duplicate"]
+    extras = [issue.variable for issue in report.issues if issue.code == "extra"]
+    invalid_lines = [
+        {"line": issue.variable, "hint": issue.hint or issue.message}
+        for issue in report.issues
+        if issue.code == "invalid_line"
+    ]
+    return {
+        "total": report.warning_count,
+        "duplicates": duplicates,
+        "extra_variables": extras,
+        "invalid_lines": invalid_lines,
+    }
 
 
 def render_validation_report(report: ValidationReport, *, source: str) -> None:

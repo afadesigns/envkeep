@@ -251,6 +251,16 @@ class EnvSpec:
                     hint="Remove duplicate assignments to keep configuration deterministic.",
                 )
             )
+        for line_no, raw in snapshot.malformed_lines():
+            report.add(
+                ValidationIssue(
+                    variable=f"line {line_no}",
+                    message="line could not be parsed",
+                    severity=IssueSeverity.WARNING,
+                    code="invalid_line",
+                    hint=f"Review the syntax: {raw}",
+                )
+            )
         return report
 
     def diff(self, left: EnvSnapshot, right: EnvSnapshot) -> DiffReport:

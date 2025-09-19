@@ -105,6 +105,28 @@ def test_validate_surfaces_duplicate_keys(tmp_path: Path) -> None:
     assert warning.variable == "DATABASE_URL"
 
 
+def test_validate_reports_invalid_lines(tmp_path: Path) -> None:
+    spec = EnvSpec.from_file(EXAMPLE_SPEC)
+    env_file = tmp_path / "invalid.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "BROKEN",
+                "DATABASE_URL=postgresql://localhost/dev",
+                "DEBUG=false",
+                "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    snapshot = EnvSnapshot.from_env_file(env_file)
+    report = spec.validate(snapshot)
+    assert report.warning_count == 1
+    warning = report.issues[0]
+    assert warning.code == "invalid_line"
+    assert warning.variable.startswith("line")
+
+
 def test_spec_rejects_duplicate_variables() -> None:
     data = {
         "version": 1,

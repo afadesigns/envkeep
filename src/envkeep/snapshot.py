@@ -16,6 +16,7 @@ class EnvSnapshot:
     values: dict[str, str]
     source: str
     duplicates: tuple[str, ...] = ()
+    invalid_lines: tuple[tuple[int, str], ...] = ()
 
     @classmethod
     def from_mapping(
@@ -24,8 +25,14 @@ class EnvSnapshot:
         *,
         source: str = "mapping",
         duplicates: Iterable[str] | None = None,
+        invalid_lines: Iterable[tuple[int, str]] | None = None,
     ) -> "EnvSnapshot":
-        return cls(values=dict(mapping), source=source, duplicates=tuple(duplicates or ()))
+        return cls(
+            values=dict(mapping),
+            source=source,
+            duplicates=tuple(duplicates or ()),
+            invalid_lines=tuple(invalid_lines or ()),
+        )
 
     @classmethod
     def from_process(cls) -> "EnvSnapshot":
@@ -35,8 +42,23 @@ class EnvSnapshot:
     def from_env_file(cls, path: str | Path) -> "EnvSnapshot":
         path_obj = Path(path)
         content = path_obj.read_text(encoding="utf-8")
-        values, duplicates = _parse_env(content)
-        return cls(values=values, source=str(path_obj), duplicates=duplicates)
+        values, duplicates, invalid_lines = _parse_env(content)
+        return cls(
+            values=values,
+            source=str(path_obj),
+            duplicates=duplicates,
+            invalid_lines=invalid_lines,
+        )
+
+    @classmethod
+    def from_text(cls, raw: str, *, source: str = "<inline>") -> "EnvSnapshot":
+        values, duplicates, invalid_lines = _parse_env(raw)
+        return cls(
+            values=values,
+            source=source,
+            duplicates=duplicates,
+            invalid_lines=invalid_lines,
+        )
 
     def get(self, key: str) -> str | None:
         return self.values.get(key)
@@ -61,19 +83,26 @@ class EnvSnapshot:
                 ordered.append(key)
         return tuple(ordered)
 
+    def malformed_lines(self) -> tuple[tuple[int, str], ...]:
+        """Return non-empty lines that could not be parsed."""
+
+        return self.invalid_lines
+
     def __contains__(self, key: str) -> bool:  # pragma: no cover
         return key in self.values
 
 
-def _parse_env(raw: str) -> tuple[dict[str, str], tuple[str, ...]]:
+def _parse_env(raw: str) -> tuple[dict[str, str], tuple[str, ...], tuple[tuple[int, str], ...]]:
     result: dict[str, str] = {}
     duplicates: list[str] = []
-    for line in raw.splitlines():
+    invalid: list[tuple[int, str]] = []
+    for index, line in enumerate(raw.splitlines(), start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         match = _ENV_LINE_RE.match(stripped)
         if not match:
+            invalid.append((index, line.rstrip("\n")))
             continue
         key = match.group("key")
         value = match.group("value")
@@ -81,7 +110,7 @@ def _parse_env(raw: str) -> tuple[dict[str, str], tuple[str, ...]]:
         if key in result:
             duplicates.append(key)
         result[key] = _unescape(processed)
-    return result, tuple(duplicates)
+    return result, tuple(duplicates), tuple(invalid)
 
 
 def _sanitize_value(value: str) -> str:

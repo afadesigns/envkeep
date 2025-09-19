@@ -21,7 +21,7 @@ jobs:
           python-version: "3.12"
       - run: |
           pip install envkeep
-          envkeep check .env --spec envkeep.toml
+          envkeep check .env --spec envkeep.toml --fail-on-warnings
 ```
 
 ## Pre-commit Hook
@@ -39,5 +39,6 @@ Add to `.pre-commit-config.yaml`:
 ```
 
 ## Deployment Pipelines
-- Validate staging and production env files with `envkeep doctor --profile staging` before promoting builds.
+- Validate staging and production env files with `envkeep doctor --profile staging --fail-on-warnings` before promoting builds.
 - Store normalization reports as artifacts to audit configuration history.
+- When env files are provided dynamically, pipe them into `envkeep check - --spec envkeep.toml` to avoid touching disk.

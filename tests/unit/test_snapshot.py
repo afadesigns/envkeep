@@ -34,6 +34,7 @@ def test_env_snapshot_supports_export_and_preserves_escapes(tmp_path: Path) -> N
             export SECRET="line\\nnext"
             export SECRET="override"
             PLAIN=value
+            MALFORMED
             """
         ),
         encoding="utf-8",
@@ -42,6 +43,7 @@ def test_env_snapshot_supports_export_and_preserves_escapes(tmp_path: Path) -> N
     assert snapshot.get("SECRET") == "override"
     assert snapshot.get("PLAIN") == "value"
     assert snapshot.duplicate_keys() == ("SECRET",)
+    assert snapshot.malformed_lines() == ((5, "MALFORMED"),)
 
 
 def test_env_snapshot_duplicate_keys_preserve_order(tmp_path: Path) -> None:
