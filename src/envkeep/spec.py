@@ -178,6 +178,11 @@ class EnvSpec:
     variables: list[VariableSpec]
     profiles: list[ProfileSpec] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    _variable_cache: dict[str, VariableSpec] = field(init=False, repr=False)
+    _profile_cache: dict[str, ProfileSpec] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._rebuild_caches()
 
     @classmethod
     def from_file(cls, path: str | Path) -> "EnvSpec":
@@ -198,7 +203,7 @@ class EnvSpec:
         return cls(version=version, variables=variables, profiles=profiles, metadata=dict(metadata))
 
     def variable_map(self) -> dict[str, VariableSpec]:
-        return {variable.name: variable for variable in self.variables}
+        return self._variable_cache
 
     def validate(self, snapshot: EnvSnapshot, *, allow_extra: bool = False) -> ValidationReport:
         report = ValidationReport()
@@ -317,7 +322,7 @@ class EnvSpec:
         return "\n".join(lines).strip() + "\n"
 
     def profiles_by_name(self) -> dict[str, ProfileSpec]:
-        return {profile.name: profile for profile in self.profiles}
+        return self._profile_cache
 
     def iter_profiles(self) -> Iterable[ProfileSpec]:
         return iter(self.profiles)
@@ -329,3 +334,7 @@ class EnvSpec:
             "variables": [spec.name for spec in self.variables],
             "profiles": [profile.name for profile in self.profiles],
         }
+
+    def _rebuild_caches(self) -> None:
+        self._variable_cache = {variable.name: variable for variable in self.variables}
+        self._profile_cache = {profile.name: profile for profile in self.profiles}

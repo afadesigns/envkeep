@@ -42,3 +42,4 @@ Add to `.pre-commit-config.yaml`:
 - Validate staging and production env files with `envkeep doctor --profile staging --fail-on-warnings` before promoting builds.
 - Store normalization reports as artifacts to audit configuration history.
 - When env files are provided dynamically, pipe them into `envkeep check - --spec envkeep.toml` to avoid touching disk.
+- Parse the JSON `summary` block to fail the pipeline on any warnings (`severity_totals.warning`) or detected drift without scanning the full issue list.

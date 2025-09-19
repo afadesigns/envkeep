@@ -53,7 +53,11 @@ def check(
         snapshot = EnvSnapshot.from_env_file(env_file)
     report = env_spec.validate(snapshot, allow_extra=allow_extra)
     if output_format.lower() == "json":
-        typer.echo(json.dumps(report.to_dict(), indent=2))
+        payload = {
+            "report": report.to_dict(),
+            "summary": report.summary(),
+        }
+        typer.echo(json.dumps(payload, indent=2))
     else:
         render_validation_report(report, source=str(env_file))
     exit_code = 0
@@ -91,7 +95,11 @@ def diff(
     right = load_snapshot(second, label="right")
     report = env_spec.diff(left, right)
     if output_format.lower() == "json":
-        typer.echo(json.dumps(report.to_dict(), indent=2))
+        payload = {
+            "report": report.to_dict(),
+            "summary": report.summary(),
+        }
+        typer.echo(json.dumps(payload, indent=2))
     else:
         render_diff_report(report, left=str(first), right=str(second))
     raise typer.Exit(code=0 if report.is_clean() else 1)
@@ -206,10 +214,12 @@ def doctor(
         snapshot = EnvSnapshot.from_env_file(env_path)
         report = env_spec.validate(snapshot, allow_extra=allow_extra)
         if output_mode == "json":
+            summary = report.summary()
             results.append({
                 "profile": name,
                 "path": str(env_path),
                 "report": report.to_dict(),
+                "summary": summary,
                 "warnings": _summarize_warnings(report),
             })
         else:
@@ -218,10 +228,33 @@ def doctor(
         if not report.is_success or (fail_on_warnings and report.warning_count > 0):
             exit_code = 1
     if output_mode == "json":
+        severity_totals = {
+            IssueSeverity.ERROR.value: 0,
+            IssueSeverity.WARNING.value: 0,
+            IssueSeverity.INFO.value: 0,
+        }
+        successes = 0
+        missing_profiles = sum(1 for item in results if "error" in item)
+        for item in results:
+            summary = item.get("summary")
+            if not summary:
+                continue
+            successes += 1
+            for key, value in summary["severity_totals"].items():
+                severity_totals[key] += value
+        summary_payload = {
+            "profiles_with_reports": successes,
+            "missing_profiles": missing_profiles,
+            "severity_totals": severity_totals,
+            "is_success": successes > 0 and all(
+                item["summary"]["is_success"] for item in results if "summary" in item
+            ) and all("error" not in item for item in results),
+        }
         payload = {
             "profiles": results,
             "allow_extra": allow_extra,
             "fail_on_warnings": fail_on_warnings,
+            "summary": summary_payload,
         }
         typer.echo(json.dumps(payload, indent=2))
     raise typer.Exit(code=exit_code)

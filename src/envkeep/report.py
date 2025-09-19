@@ -65,6 +65,21 @@ class ValidationReport:
             "issues": [issue.to_dict() for issue in self.issues],
         }
 
+    def summary(self) -> dict[str, Any]:
+        severity_totals = {
+            IssueSeverity.ERROR.value: self.error_count,
+            IssueSeverity.WARNING.value: self.warning_count,
+            IssueSeverity.INFO.value: sum(1 for issue in self.issues if issue.severity == IssueSeverity.INFO),
+        }
+        codes: dict[str, int] = {}
+        for issue in self.issues:
+            codes[issue.code] = codes.get(issue.code, 0) + 1
+        return {
+            "is_success": self.is_success,
+            "severity_totals": severity_totals,
+            "codes": codes,
+        }
+
 
 class DiffKind(str, Enum):
     """Kind of difference discovered by the diff engine."""
@@ -120,6 +135,15 @@ class DiffReport:
         return {
             "change_count": self.change_count,
             "entries": [entry.to_dict() for entry in self.entries],
+        }
+
+    def summary(self) -> dict[str, Any]:
+        by_kind: dict[str, int] = {kind.value: 0 for kind in DiffKind}
+        for entry in self.entries:
+            by_kind[entry.kind.value] += 1
+        return {
+            "change_count": self.change_count,
+            "by_kind": by_kind,
         }
 
 

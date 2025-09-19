@@ -28,6 +28,23 @@ def test_cli_check_failure(tmp_path: Path) -> None:
     assert 'Errors: 1' in result.stdout
 
 
+def test_cli_check_json_summary() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "check",
+            str(DEV_ENV),
+            "--spec",
+            str(EXAMPLE_SPEC),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["severity_totals"]["warning"] == 0
+
+
 def test_cli_check_fail_on_warnings(tmp_path: Path) -> None:
     env_file = tmp_path / "warn.env"
     env_file.write_text(
@@ -145,8 +162,11 @@ def test_cli_doctor_json_output(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["profiles"]
-    assert payload["profiles"][0]["report"]["is_success"] is True
-    assert payload["profiles"][0]["warnings"]["total"] == 0
+    profile = payload["profiles"][0]
+    assert profile["report"]["is_success"] is True
+    assert profile["summary"]["severity_totals"]["warning"] == 0
+    assert profile["warnings"]["total"] == 0
+    assert payload["summary"]["severity_totals"]["warning"] == 0
 
 
 def test_cli_doctor_fail_on_warnings(tmp_path: Path) -> None:
@@ -209,9 +229,12 @@ def test_cli_doctor_json_warnings(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    warnings = payload["profiles"][0]["warnings"]
+    profile = payload["profiles"][0]
+    warnings = profile["warnings"]
     assert warnings["total"] == 1
     assert warnings["extra_variables"] == ["EXTRA"]
+    assert profile["summary"]["severity_totals"]["warning"] == 1
+    assert payload["summary"]["severity_totals"]["warning"] == 1
 
 
 def test_cli_check_reads_from_stdin() -> None:
@@ -252,3 +275,23 @@ def test_cli_diff_reads_from_stdin(tmp_path: Path) -> None:
         input=stdin_content,
     )
     assert result.exit_code == 0
+
+
+def test_cli_diff_json_summary(tmp_path: Path) -> None:
+    right = tmp_path / "right.env"
+    right.write_text(DEV_ENV.read_text(), encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "diff",
+            str(DEV_ENV),
+            str(right),
+            "--spec",
+            str(EXAMPLE_SPEC),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["by_kind"]["changed"] == 0

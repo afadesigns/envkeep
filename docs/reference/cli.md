@@ -24,6 +24,7 @@ Exit codes:
 
 `envkeep check` also emits warnings for duplicate key declarations so that drift is caught early.
 Pass `-` instead of a path to read the environment from `stdin` (useful in pipelines).
+JSON output returns an object with `report` (full issue list) and `summary` (severity totals and counts per code).
 
 ## `envkeep diff`
 Compare two environment files with normalization and secret redaction.
@@ -33,6 +34,7 @@ envkeep diff .env staging.env --spec envkeep.toml
 ```
 
 Exit codes mirror `check` (non-zero when drift is detected).
+JSON output includes both the full entry list under `report` and a `summary` with counts per diff kind.
 
 ## `envkeep generate`
 Emit a sanitized `.env.example`.
@@ -65,4 +67,4 @@ Options:
 - `--fail-on-warnings` to fail the run if any profile reports warnings
 
 Exit code aggregates results across profiles (non-zero if any profile fails).
-With `--format json`, the command prints an object containing each profile report and omits the Rich table output. The `warnings` field includes duplicate keys, extra variables, and malformed line metadata for downstream automation.
+With `--format json`, the command prints an object containing each profile report and omits the Rich table output. Each profile entry includes `report`, `summary`, and `warnings`, and the top-level payload exposes an aggregated `summary` for all profiles plus the `warnings` field (duplicate keys, extra variables, malformed lines) for downstream automation.
