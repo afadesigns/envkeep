@@ -4,7 +4,8 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterator
+from types import MappingProxyType
+from typing import Any, Iterator, Mapping
 
 
 class IssueSeverity(str, Enum):
@@ -54,6 +55,7 @@ class ValidationReport:
     _sorted_code_cache: dict[str, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
     _sorted_variable_cache: dict[str, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
     _counts_by_code_cache: tuple[tuple[str, int], ...] | None = field(init=False, repr=False)
+    _counts_by_code_mapping: MappingProxyType[str, int] | None = field(init=False, repr=False)
     _variables_cache: tuple[str, ...] | None = field(init=False, repr=False)
     _warning_summary_cache: tuple[
         int,
@@ -87,6 +89,7 @@ class ValidationReport:
         self._sorted_code_cache = {}
         self._sorted_variable_cache = {}
         self._counts_by_code_cache = None
+        self._counts_by_code_mapping = None
         self._variables_cache = None
         self._warning_summary_cache = None
         self._variables_by_severity_cache = None
@@ -139,6 +142,7 @@ class ValidationReport:
         self._sorted_code_cache.pop(issue.code, None)
         self._sorted_variable_cache.pop(issue.variable, None)
         self._counts_by_code_cache = None
+        self._counts_by_code_mapping = None
         self._variables_cache = None
         self._warning_summary_cache = None
         self._variables_by_severity_cache = None
@@ -171,10 +175,13 @@ class ValidationReport:
             IssueSeverity.INFO.value: self.info_count,
         }
 
-    def counts_by_code(self) -> dict[str, int]:
-        if self._counts_by_code_cache is None:
-            self._counts_by_code_cache = tuple(sorted(self._code_counts.items()))
-        return dict(self._counts_by_code_cache)
+    def counts_by_code(self) -> Mapping[str, int]:
+        if self._counts_by_code_mapping is None:
+            if self._counts_by_code_cache is None:
+                self._counts_by_code_cache = tuple(sorted(self._code_counts.items()))
+            # Materialize once so MappingProxyType exposes a stable view
+            self._counts_by_code_mapping = MappingProxyType(dict(self._counts_by_code_cache))
+        return self._counts_by_code_mapping
 
     def most_common_codes(self, limit: int | None = None) -> list[tuple[str, int]]:
         if self._most_common_codes_cache is None:
@@ -272,7 +279,7 @@ class ValidationReport:
             "warning_count": self.warning_count,
             "issue_count": self.issue_count,
             "severity_totals": self.severity_totals(),
-            "codes": self.counts_by_code(),
+            "codes": dict(self.counts_by_code()),
             "most_common_codes": self.most_common_codes(limit),
             "non_empty_severities": [severity.value for severity in self.non_empty_severities()],
             "variables": list(self.variables()),
@@ -290,7 +297,7 @@ class ValidationReport:
             "has_info": self.has_info,
             "issue_count": self.issue_count,
             "severity_totals": self.severity_totals(),
-            "codes": self.counts_by_code(),
+            "codes": dict(self.counts_by_code()),
             "most_common_codes": self.most_common_codes(limit),
             "non_empty_severities": [severity.value for severity in self.non_empty_severities()],
             "variables": list(self.variables()),
@@ -433,6 +440,7 @@ class DiffReport:
     _sorted_kind_cache: dict[DiffKind, tuple[DiffEntry, ...]] = field(init=False, repr=False)
     _variables_cache: tuple[str, ...] | None = field(init=False, repr=False)
     _sorted_entries_cache: tuple[DiffEntry, ...] | None = field(init=False, repr=False)
+    _counts_by_kind_mapping: MappingProxyType[str, int] | None = field(init=False, repr=False)
     _kind_order: tuple[DiffKind, ...] = (
         DiffKind.MISSING,
         DiffKind.EXTRA,
@@ -448,6 +456,7 @@ class DiffReport:
         self._sorted_kind_cache = {}
         self._variables_cache = None
         self._sorted_entries_cache = None
+        self._counts_by_kind_mapping = None
         if self.entries:
             captured = list(self.entries)
             self.entries.clear()
@@ -470,6 +479,7 @@ class DiffReport:
         self._sorted_kind_cache.pop(entry.kind, None)
         self._variables_cache = None
         self._sorted_entries_cache = None
+        self._counts_by_kind_mapping = None
 
     def _track_entry(self, entry: DiffEntry) -> None:
         self._counts[entry.kind] += 1
@@ -492,7 +502,7 @@ class DiffReport:
         return {
             "change_count": self.change_count,
             "is_clean": self.is_clean(),
-            "by_kind": self.counts_by_kind(),
+            "by_kind": dict(self.counts_by_kind()),
             "entries": [entry.to_dict() for entry in self.entries],
             "variables": list(self.variables()),
             "top_variables": self.top_variables(limit),
@@ -597,18 +607,21 @@ class DiffReport:
             for key, values in self._variables_by_kind_cache.items()
         }
 
-    def counts_by_kind(self) -> dict[str, int]:
-        return {
-            kind.value: self.count_for(kind)
-            for kind in self._kind_order
-        }
+    def counts_by_kind(self) -> Mapping[str, int]:
+        if self._counts_by_kind_mapping is None:
+            data = {
+                kind.value: self.count_for(kind)
+                for kind in self._kind_order
+            }
+            self._counts_by_kind_mapping = MappingProxyType(data)
+        return self._counts_by_kind_mapping
 
     def summary(self, *, top_limit: int | None = None) -> dict[str, Any]:
         limit = self._normalize_limit(top_limit)
         return {
             "change_count": self.change_count,
             "is_clean": self.is_clean(),
-            "by_kind": self.counts_by_kind(),
+            "by_kind": dict(self.counts_by_kind()),
             "non_empty_kinds": [kind.value for kind in self.non_empty_kinds()],
             "variables": list(self.variables()),
             "top_variables": self.top_variables(limit),

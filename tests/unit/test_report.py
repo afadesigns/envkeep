@@ -281,3 +281,41 @@ def test_validation_report_warning_summary_orders_entries() -> None:
         {"line": "line 2", "hint": "missing equals"},
         {"line": "line 10", "hint": "check spacing"},
     ]
+
+
+def test_validation_report_views_are_copy_on_read() -> None:
+    report = ValidationReport(
+        issues=[
+            ValidationIssue(variable="A", message="missing", severity=IssueSeverity.ERROR, code="missing"),
+            ValidationIssue(variable="B", message="dup", severity=IssueSeverity.WARNING, code="duplicate"),
+            ValidationIssue(variable="C", message="warn", severity=IssueSeverity.WARNING, code="extra"),
+        ]
+    )
+    top = report.top_variables()
+    top.append(("Z", 99))
+    assert ("Z", 99) not in report.top_variables()
+    warning_summary = report.warning_summary()
+    warning_summary["duplicates"].append("X")
+    assert "X" not in report.warning_summary()["duplicates"]
+    warning_summary["invalid_lines"].append({"line": "42", "hint": "oops"})
+    assert {"line": "42", "hint": "oops"} not in report.warning_summary()["invalid_lines"]
+
+
+def test_diff_report_views_are_copy_on_read() -> None:
+    report = DiffReport(
+        entries=[
+            DiffEntry(variable="FOO", kind=DiffKind.EXTRA, left=None, right="1", secret=False),
+            DiffEntry(variable="BAR", kind=DiffKind.MISSING, left="1", right=None, secret=False),
+        ]
+    )
+    tops = report.top_variables()
+    tops.append(("BAZ", 5))
+    assert ("BAZ", 5) not in report.top_variables()
+    variables_by_kind = report.variables_by_kind()
+    variables_by_kind[DiffKind.EXTRA.value].append("QUX")
+    assert "QUX" not in report.variables_by_kind()[DiffKind.EXTRA.value]
+    entries = report.entries_by_kind(DiffKind.EXTRA)
+    entries.append(
+        DiffEntry(variable="NEW", kind=DiffKind.EXTRA, left=None, right="2", secret=False)
+    )
+    assert all(entry.variable != "NEW" for entry in report.entries_by_kind(DiffKind.EXTRA))
