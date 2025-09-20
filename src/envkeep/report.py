@@ -50,6 +50,10 @@ class ValidationReport:
     _severity_variable_cache: dict[IssueSeverity, tuple[str, ...]] = field(init=False, repr=False)
     _top_variables_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
     _most_common_codes_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
+    _sorted_severity_cache: dict[IssueSeverity, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
+    _sorted_code_cache: dict[str, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
+    _counts_by_code_cache: tuple[tuple[str, int], ...] | None = field(init=False, repr=False)
+    _variables_cache: tuple[str, ...] | None = field(init=False, repr=False)
     _issue_sort_key = staticmethod(
         lambda issue: (
             issue.variable.casefold(),
@@ -71,6 +75,10 @@ class ValidationReport:
         self._severity_variable_cache = {}
         self._top_variables_cache = None
         self._most_common_codes_cache = None
+        self._sorted_severity_cache = {}
+        self._sorted_code_cache = {}
+        self._counts_by_code_cache = None
+        self._variables_cache = None
         if self.issues:
             captured = list(self.issues)
             self.issues.clear()
@@ -123,6 +131,10 @@ class ValidationReport:
         self._variable_buckets.setdefault(issue.variable, []).append(issue)
         self._severity_variables[issue.severity].add(issue.variable)
         self._severity_variable_cache.pop(issue.severity, None)
+        self._sorted_severity_cache.pop(issue.severity, None)
+        self._sorted_code_cache.pop(issue.code, None)
+        self._counts_by_code_cache = None
+        self._variables_cache = None
         self._top_variables_cache = None
         self._most_common_codes_cache = None
 
@@ -143,7 +155,9 @@ class ValidationReport:
         }
 
     def counts_by_code(self) -> dict[str, int]:
-        return {code: self._code_counts[code] for code in sorted(self._code_counts)}
+        if self._counts_by_code_cache is None:
+            self._counts_by_code_cache = tuple(sorted(self._code_counts.items()))
+        return dict(self._counts_by_code_cache)
 
     def most_common_codes(self, limit: int | None = None) -> list[tuple[str, int]]:
         if self._most_common_codes_cache is None:
@@ -159,14 +173,19 @@ class ValidationReport:
         return tuple(sorted(self._code_counts))
 
     def variables(self) -> tuple[str, ...]:
+        if self._variables_cache is not None:
+            return self._variables_cache
         if not self._variable_counts:
+            self._variables_cache = ()
             return ()
-        return tuple(
+        computed = tuple(
             sorted(
                 self._variable_counts,
                 key=lambda name: (name.casefold(), name),
             )
         )
+        self._variables_cache = computed
+        return computed
 
     def has_code(self, code: str) -> bool:
         return code in self._code_counts
@@ -258,16 +277,28 @@ class ValidationReport:
         }
 
     def issues_by_severity(self, severity: IssueSeverity) -> list[ValidationIssue]:
+        cached = self._sorted_severity_cache.get(severity)
+        if cached is not None:
+            return [*cached]
         bucket = self._severity_buckets.get(severity)
         if not bucket:
+            self._sorted_severity_cache[severity] = ()
             return []
-        return [*sorted(bucket, key=self._issue_sort_key)]
+        sorted_bucket = tuple(sorted(bucket, key=self._issue_sort_key))
+        self._sorted_severity_cache[severity] = sorted_bucket
+        return [*sorted_bucket]
 
     def issues_by_code(self, code: str) -> list[ValidationIssue]:
+        cached = self._sorted_code_cache.get(code)
+        if cached is not None:
+            return [*cached]
         bucket = self._code_buckets.get(code)
         if not bucket:
+            self._sorted_code_cache[code] = ()
             return []
-        return [*sorted(bucket, key=self._issue_sort_key)]
+        sorted_bucket = tuple(sorted(bucket, key=self._issue_sort_key))
+        self._sorted_code_cache[code] = sorted_bucket
+        return [*sorted_bucket]
 
     @staticmethod
     def _casefold_sorted(values: Iterable[str]) -> list[str]:
@@ -346,6 +377,7 @@ class DiffReport:
     _variable_counts: Counter[str] = field(init=False, repr=False)
     _top_variables_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
     _variables_by_kind_cache: dict[str, tuple[str, ...]] | None = field(init=False, repr=False)
+    _sorted_kind_cache: dict[DiffKind, tuple[DiffEntry, ...]] = field(init=False, repr=False)
     _kind_order: tuple[DiffKind, ...] = (
         DiffKind.MISSING,
         DiffKind.EXTRA,
@@ -358,6 +390,7 @@ class DiffReport:
         self._variable_counts = Counter()
         self._top_variables_cache = None
         self._variables_by_kind_cache = None
+        self._sorted_kind_cache = {}
         if self.entries:
             captured = list(self.entries)
             self.entries.clear()
@@ -380,6 +413,7 @@ class DiffReport:
         self._variable_counts[entry.variable] += 1
         self._top_variables_cache = None
         self._variables_by_kind_cache = None
+        self._sorted_kind_cache.pop(entry.kind, None)
 
     def add(self, entry: DiffEntry) -> None:
         self.entries.append(entry)
@@ -416,15 +450,21 @@ class DiffReport:
         )
 
     def entries_by_kind(self, kind: DiffKind) -> list[DiffEntry]:
+        cached = self._sorted_kind_cache.get(kind)
+        if cached is not None:
+            return [*cached]
         bucket = self._kind_buckets.get(kind)
         if not bucket:
+            self._sorted_kind_cache[kind] = ()
             return []
-        return [
-            *sorted(
+        sorted_bucket = tuple(
+            sorted(
                 bucket,
                 key=lambda item: (item.variable.casefold(), item.variable),
             )
-        ]
+        )
+        self._sorted_kind_cache[kind] = sorted_bucket
+        return [*sorted_bucket]
 
     def count_for(self, kind: DiffKind) -> int:
         return self._counts.get(kind, 0)
