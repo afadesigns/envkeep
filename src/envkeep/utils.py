@@ -59,11 +59,20 @@ def strip_bom(text: str) -> str:
     return text
 
 
+def line_number_sort_key(value: str) -> tuple[int, str]:
+    """Return a sortable key that prefers embedded digits when present."""
+
+    digits = "".join(char for char in value if char.isdigit())
+    number = int(digits) if digits else 0
+    return number, value
+
+
 __all__ = [
     "BOM",
     "OptionalPath",
     "casefold_sorted",
     "normalized_limit",
+    "line_number_sort_key",
     "resolve_optional_path_option",
     "sorted_counter",
     "strip_bom",

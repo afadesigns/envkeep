@@ -20,6 +20,7 @@ from .spec import EnvSpec, ProfileSpec
 from .utils import (
     OptionalPath,
     casefold_sorted,
+    line_number_sort_key,
     normalized_limit,
     resolve_optional_path_option,
     sorted_counter,
@@ -277,11 +278,6 @@ def _emit_doctor_json(
         "top_variables": aggregated_top_variables,
         "profile_base_dir": profile_base_dir,
     }
-    def _line_number(entry: dict[str, Any]) -> int:
-        raw = entry.get("line", "")
-        digits = "".join(char for char in raw if char.isdigit())
-        return int(digits) if digits else 0
-
     warnings_payload = {
         "duplicates": casefold_sorted(aggregated_duplicates),
         "extra_variables": casefold_sorted(aggregated_extras),
@@ -289,8 +285,7 @@ def _emit_doctor_json(
             aggregated_invalid_lines,
             key=lambda item: (
                 item.get("profile", ""),
-                _line_number(item),
-                item.get("line", ""),
+                *line_number_sort_key(item.get("line", "")),
             ),
         ),
     }

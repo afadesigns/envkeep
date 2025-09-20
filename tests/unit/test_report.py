@@ -196,6 +196,65 @@ def test_validation_report_counters_update_incrementally() -> None:
     assert summary["codes"] == {"missing": 1, "extra": 2}
 
 
+def test_validation_report_warning_summary_orders_outputs() -> None:
+    report = ValidationReport()
+    report.extend(
+        [
+            ValidationIssue(
+                variable="Other",
+                message="duplicate",
+                severity=IssueSeverity.WARNING,
+                code="duplicate",
+            ),
+            ValidationIssue(
+                variable="other",
+                message="duplicate again",
+                severity=IssueSeverity.WARNING,
+                code="duplicate",
+            ),
+            ValidationIssue(
+                variable="ALPHA",
+                message="duplicate third",
+                severity=IssueSeverity.WARNING,
+                code="duplicate",
+            ),
+            ValidationIssue(
+                variable="gamma",
+                message="extra variable",
+                severity=IssueSeverity.WARNING,
+                code="extra",
+            ),
+            ValidationIssue(
+                variable="Beta",
+                message="another extra",
+                severity=IssueSeverity.WARNING,
+                code="extra",
+            ),
+            ValidationIssue(
+                variable="line 10",
+                message="invalid",
+                severity=IssueSeverity.WARNING,
+                code="invalid_line",
+                hint="line 10 message",
+            ),
+            ValidationIssue(
+                variable="line 2",
+                message="invalid",
+                severity=IssueSeverity.WARNING,
+                code="invalid_line",
+                hint="line 2 message",
+            ),
+        ]
+    )
+    summary = report.warning_summary()
+    assert summary["total"] == 7
+    assert summary["duplicates"] == ["ALPHA", "Other", "other"]
+    assert summary["extra_variables"] == ["Beta", "gamma"]
+    invalid_lines = summary["invalid_lines"]
+    assert [entry["line"] for entry in invalid_lines] == ["line 2", "line 10"]
+    assert invalid_lines[0]["hint"] == "line 2 message"
+
+
 def test_diff_report_sorted_entries_orders_by_kind_then_name() -> None:
     report = DiffReport(
         entries=[

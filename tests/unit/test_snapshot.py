@@ -97,3 +97,11 @@ def test_env_snapshot_strips_utf8_bom() -> None:
     snapshot = EnvSnapshot.from_text(raw)
     assert snapshot.get("API_TOKEN") == "secret"
     assert snapshot.malformed_lines() == ()
+
+
+def test_env_snapshot_from_file_strips_utf8_bom(tmp_path: Path) -> None:
+    env_file = tmp_path / "with-bom.env"
+    env_file.write_text("\ufeffAPI_TOKEN=secret\n", encoding="utf-8")
+    snapshot = EnvSnapshot.from_env_file(env_file)
+    assert snapshot.get("API_TOKEN") == "secret"
+    assert snapshot.malformed_lines() == ()

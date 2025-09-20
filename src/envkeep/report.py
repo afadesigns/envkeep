@@ -9,7 +9,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, Iterator
 
-from .utils import normalized_limit
+from .utils import casefold_sorted, line_number_sort_key, normalized_limit, sorted_counter
 
 
 class IssueSeverity(str, Enum):
@@ -193,10 +193,7 @@ class ValidationReport:
 
     def most_common_codes(self, limit: int | None = None) -> list[tuple[str, int]]:
         if self._most_common_codes_cache is None:
-            self._most_common_codes_cache = sorted(
-                self._code_counts.items(),
-                key=lambda item: (-item[1], item[0]),
-            )
+            self._most_common_codes_cache = sorted_counter(self._code_counts)
         if limit is not None:
             return self._most_common_codes_cache[:limit]
         return [*self._most_common_codes_cache]
@@ -210,12 +207,7 @@ class ValidationReport:
         if not self._variable_counts:
             self._variables_cache = ()
             return ()
-        computed = tuple(
-            sorted(
-                self._variable_counts,
-                key=lambda name: (name.casefold(), name),
-            )
-        )
+        computed = tuple(casefold_sorted(self._variable_counts))
         self._variables_cache = computed
         return computed
 
@@ -242,23 +234,13 @@ class ValidationReport:
         cached = self._severity_variable_cache.get(severity)
         if cached is not None:
             return cached
-        computed = tuple(
-            sorted(
-                self._severity_variables[severity],
-                key=lambda name: (name.casefold(), name),
-            )
-        )
+        computed = tuple(casefold_sorted(self._severity_variables[severity]))
         self._severity_variable_cache[severity] = computed
         return computed
 
     def top_variables(self, limit: int | None = None) -> Sequence[tuple[str, int]]:
         if self._top_variables_cache is None:
-            self._top_variables_cache = tuple(
-                sorted(
-                    self._variable_counts.items(),
-                    key=lambda item: (-item[1], item[0]),
-                )
-            )
+            self._top_variables_cache = tuple(sorted_counter(self._variable_counts))
         if limit is None:
             return list(self._top_variables_cache)
         if limit == 0:
@@ -346,16 +328,6 @@ class ValidationReport:
         self._sorted_code_cache[code] = sorted_bucket
         return sorted_bucket
 
-    @staticmethod
-    def _casefold_sorted(values: Iterable[str]) -> list[str]:
-        return sorted(set(values), key=lambda item: (item.casefold(), item))
-
-    @staticmethod
-    def _invalid_line_sort_key(value: str) -> tuple[int, str]:
-        digits = "".join(char for char in value if char.isdigit())
-        number = int(digits) if digits else 0
-        return number, value
-
     def warning_summary(self) -> dict[str, Any]:
         cached = self._warning_summary_cache
         if cached is None:
@@ -363,10 +335,10 @@ class ValidationReport:
             extra_issues = self._sorted_code_bucket("extra")
             invalid_line_issues = self._sorted_code_bucket("invalid_line")
             duplicates = tuple(
-                self._casefold_sorted(issue.variable for issue in duplicate_issues)
+                casefold_sorted({issue.variable for issue in duplicate_issues})
             )
             extras = tuple(
-                self._casefold_sorted(issue.variable for issue in extra_issues)
+                casefold_sorted({issue.variable for issue in extra_issues})
             )
             invalid_lines = tuple(
                 sorted(
@@ -374,7 +346,7 @@ class ValidationReport:
                         (issue.variable, issue.hint or issue.message)
                         for issue in invalid_line_issues
                     ),
-                    key=lambda item: self._invalid_line_sort_key(item[0]),
+                    key=lambda item: line_number_sort_key(item[0]),
                 )
             )
             cached = self._warning_summary_cache = (
@@ -561,12 +533,7 @@ class DiffReport:
         if not self._variable_counts:
             self._variables_cache = ()
             return ()
-        computed = tuple(
-            sorted(
-                self._variable_counts,
-                key=lambda name: (name.casefold(), name),
-            )
-        )
+        computed = tuple(casefold_sorted(self._variable_counts))
         self._variables_cache = computed
         return computed
 
@@ -575,12 +542,7 @@ class DiffReport:
 
     def top_variables(self, limit: int | None = None) -> Sequence[tuple[str, int]]:
         if self._top_variables_cache is None:
-            self._top_variables_cache = tuple(
-                sorted(
-                    self._variable_counts.items(),
-                    key=lambda item: (-item[1], item[0]),
-                )
-            )
+            self._top_variables_cache = tuple(sorted_counter(self._variable_counts))
         if limit is None:
             return list(self._top_variables_cache)
         if limit == 0:
@@ -595,12 +557,7 @@ class DiffReport:
                     entry.variable
                     for entry in self._kind_buckets.get(kind, [])
                 }
-                computed[kind.value] = tuple(
-                    sorted(
-                        variables,
-                        key=lambda name: (name.casefold(), name),
-                    )
-                )
+                computed[kind.value] = tuple(casefold_sorted(variables))
             self._variables_by_kind_cache = computed
         return {
             key: list(values)

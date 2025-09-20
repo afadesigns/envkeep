@@ -7,6 +7,7 @@ import typer
 
 from envkeep.utils import (
     casefold_sorted,
+    line_number_sort_key,
     normalized_limit,
     resolve_optional_path_option,
     sorted_counter,
@@ -49,3 +50,9 @@ def test_resolve_optional_path_option_accepts_strings(tmp_path: Path) -> None:
     resolved = resolve_optional_path_option(str(path))
     assert resolved == path
     assert isinstance(resolved, Path)
+
+
+def test_line_number_sort_key_orders_digits() -> None:
+    values = ["line 12", "line 3", "line"]
+    ordered = sorted(values, key=line_number_sort_key)
+    assert ordered == ["line", "line 3", "line 12"]
