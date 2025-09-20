@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import Counter
 from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
@@ -17,7 +18,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .report import DiffReport, IssueSeverity, ValidationIssue, ValidationReport
+from .report import DiffKind, DiffReport, IssueSeverity, ValidationIssue, ValidationReport
 from .snapshot import EnvSnapshot
 from .spec import EnvSpec
 
@@ -98,6 +99,13 @@ def _emit_json(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2))
 
 
+def _usage_error(message: str) -> None:
+    """Emit a usage error to stderr and exit with the conventional code."""
+
+    typer.echo(message, err=True)
+    raise typer.Exit(code=2)
+
+
 def _handle_validation_output(
     report: ValidationReport,
     *,
@@ -111,7 +119,7 @@ def _handle_validation_output(
     else:
         render_validation_report(report, source=source)
     exit_code = 0
-    if not report.is_success or (fail_on_warnings and report.warning_count > 0):
+    if report.has_errors or (fail_on_warnings and report.has_warnings):
         exit_code = 1
     return exit_code
 
@@ -129,6 +137,46 @@ def _handle_diff_output(
     else:
         render_diff_report(report, left=left, right=right)
     return 0 if report.is_clean() else 1
+
+
+def _format_severity_summary(report: ValidationReport) -> str:
+    totals = report.severity_totals()
+    ordered = [
+        ("Errors", IssueSeverity.ERROR.value),
+        ("Warnings", IssueSeverity.WARNING.value),
+        ("Info", IssueSeverity.INFO.value),
+    ]
+    parts = [
+        f"{label}: {totals[key]}"
+        for label, key in ordered
+        if totals[key] > 0
+    ]
+    if not parts:
+        parts = [f"{label}: {totals[key]}" for label, key in ordered]
+    top_variables = [name for name, _ in report.top_variables(3)]
+    if top_variables:
+        parts.append("Impacted: " + ", ".join(top_variables))
+    return " · ".join(parts)
+
+
+def _format_diff_summary(report: DiffReport) -> str:
+    summary = report.counts_by_kind()
+    ordered = [
+        ("Missing", DiffKind.MISSING.value),
+        ("Extra", DiffKind.EXTRA.value),
+        ("Changed", DiffKind.CHANGED.value),
+    ]
+    parts = [
+        f"{label}: {summary[key]}"
+        for label, key in ordered
+        if summary[key] > 0
+    ]
+    if not parts:
+        parts = [f"{label}: {summary[key]}" for label, key in ordered]
+    top_variables = [name for name, _ in report.top_variables(3)]
+    if top_variables:
+        parts.append("Impacted: " + ", ".join(top_variables))
+    return " · ".join(parts)
 
 
 def _inject_extra_warnings(
@@ -162,6 +210,10 @@ def _emit_doctor_json(
     *,
     allow_extra: bool,
     fail_on_warnings: bool,
+    top_limit: int,
+    aggregated_codes: list[tuple[str, int]],
+    aggregated_top_variables: list[tuple[str, int]],
+    aggregated_variables: list[str],
 ) -> None:
     severity_totals = {
         IssueSeverity.ERROR.value: 0,
@@ -170,6 +222,9 @@ def _emit_doctor_json(
     }
     successes = 0
     missing_profiles = sum(1 for item in results if "error" in item)
+    aggregated_duplicates: set[str] = set()
+    aggregated_extras: set[str] = set()
+    aggregated_invalid_lines: list[dict[str, Any]] = []
     for item in results:
         summary = item.get("summary")
         if not summary:
@@ -177,6 +232,23 @@ def _emit_doctor_json(
         successes += 1
         for key, value in summary["severity_totals"].items():
             severity_totals[key] += value
+        warnings = item.get("warnings")
+        if warnings:
+            aggregated_duplicates.update(warnings.get("duplicates", ()))
+            aggregated_extras.update(warnings.get("extra_variables", ()))
+            profile = item.get("profile")
+            for warning in warnings.get("invalid_lines", ()):
+                payload = dict(warning)
+                if profile is not None:
+                    payload.setdefault("profile", profile)
+                aggregated_invalid_lines.append(payload)
+    non_empty_severities = [
+        key
+        for key, value in severity_totals.items()
+        if value > 0
+    ]
+    if not non_empty_severities:
+        non_empty_severities = list(severity_totals.keys())
     summary_payload = {
         "profiles_with_reports": successes,
         "missing_profiles": missing_profiles,
@@ -184,12 +256,34 @@ def _emit_doctor_json(
         "is_success": successes > 0
         and all(item["summary"]["is_success"] for item in results if "summary" in item)
         and all("error" not in item for item in results),
+        "non_empty_severities": non_empty_severities,
+        "most_common_codes": aggregated_codes,
+        "variables": aggregated_variables,
+        "top_variables": aggregated_top_variables,
+    }
+    def _line_number(entry: dict[str, Any]) -> int:
+        raw = entry.get("line", "")
+        digits = "".join(char for char in raw if char.isdigit())
+        return int(digits) if digits else 0
+
+    warnings_payload = {
+        "duplicates": sorted(aggregated_duplicates, key=str.casefold),
+        "extra_variables": sorted(aggregated_extras, key=str.casefold),
+        "invalid_lines": sorted(
+            aggregated_invalid_lines,
+            key=lambda item: (
+                item.get("profile", ""),
+                _line_number(item),
+                item.get("line", ""),
+            ),
+        ),
     }
     payload = {
         "profiles": results,
         "allow_extra": allow_extra,
         "fail_on_warnings": fail_on_warnings,
         "summary": summary_payload,
+        "warnings": warnings_payload,
     }
     _emit_json(payload)
 
@@ -244,7 +338,7 @@ def check(
     env_path = str(env_file)
     spec_path = str(spec)
     if spec_path == "-" and env_path == "-":
-        raise typer.BadParameter("cannot read both spec and environment from stdin")
+        _usage_error("cannot read both spec and environment from stdin")
     stdin_spec: str | None = None
     if spec_path == "-":
         stdin_spec = sys.stdin.read()
@@ -278,14 +372,14 @@ def diff(
     spec_path = str(spec)
     minus_count = sum(1 for candidate in (str(first), str(second)) if candidate == "-")
     if spec_path == "-" and minus_count:
-        raise typer.BadParameter("cannot combine spec from stdin with environment stdin input")
+        _usage_error("cannot combine spec from stdin with environment stdin input")
     stdin_spec: str | None = None
     if spec_path == "-":
         stdin_spec = sys.stdin.read()
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     stdin_buffer: str | None = None
     if minus_count > 1:
-        raise typer.BadParameter("stdin can only be supplied for one file in diff.")
+        _usage_error("stdin can only be supplied for one file in diff.")
 
     def load_snapshot(path: Path, *, label: str) -> EnvSnapshot:
         nonlocal stdin_buffer
@@ -424,6 +518,11 @@ def doctor(
         is_flag=True,
         flag_value=True,
     ),
+    summary_top: int = typer.Option(
+        3,
+        "--summary-top",
+        help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
+    ),
 ) -> None:
     """Validate one or more profiles declared in the spec."""
 
@@ -447,8 +546,24 @@ def doctor(
     fmt = _coerce_output_format(output_format)
     use_json = fmt is OutputFormat.JSON
     results: list[dict[str, Any]] = []
+    total_errors = 0
+    total_warnings = 0
+    total_info = 0
+    missing_profiles = 0
+    checked_profiles = 0
+    aggregate_warning_counts = {
+        "duplicates": 0,
+        "extra_variables": 0,
+        "invalid_lines": 0,
+    }
+    aggregate_issue_variables: set[str] = set()
+    aggregated_codes: Counter[str] = Counter()
+    aggregated_variables: set[str] = set()
+    aggregated_variable_counts: Counter[str] = Counter()
+    top_limit = summary_top if summary_top >= 0 else 0
     for name, env_path in selected:
         if not env_path.exists():
+            missing_profiles += 1
             if use_json:
                 results.append({
                     "profile": name,
@@ -462,33 +577,138 @@ def doctor(
         snapshot = EnvSnapshot.from_env_file(env_path)
         report = env_spec.validate(snapshot, allow_extra=allow_extra)
         _inject_extra_warnings(report, snapshot, env_spec, allow_extra=allow_extra)
+        checked_profiles += 1
+        severity_totals = report.severity_totals()
+        total_errors += severity_totals[IssueSeverity.ERROR.value]
+        total_warnings += severity_totals[IssueSeverity.WARNING.value]
+        total_info += severity_totals[IssueSeverity.INFO.value]
+        warnings_summary = _summarize_warnings(report)
+        aggregate_warning_counts["duplicates"] += len(warnings_summary["duplicates"])
+        aggregate_warning_counts["extra_variables"] += len(warnings_summary["extra_variables"])
+        aggregate_warning_counts["invalid_lines"] += len(warnings_summary["invalid_lines"])
+        summary_data = report.summary()
+        aggregate_issue_variables.update(summary_data.get("variables", []))
+        aggregated_codes.update(summary_data.get("codes", {}))
+        aggregated_variables.update(summary_data.get("variables", ()))
+        for variable, count in summary_data.get("top_variables", []):
+            aggregated_variable_counts[variable] += count
+        if top_limit == 0:
+            summary_data["top_variables"] = []
+            summary_data["most_common_codes"] = []
+        else:
+            summary_data["top_variables"] = summary_data.get("top_variables", [])[:top_limit]
+            summary_data["most_common_codes"] = summary_data.get("most_common_codes", [])[:top_limit]
         if use_json:
-            summary = report.summary()
+            summary = summary_data
+            report_payload = report.to_dict()
+            if top_limit == 0:
+                report_payload["top_variables"] = []
+                report_payload["most_common_codes"] = []
+            else:
+                report_payload["top_variables"] = report_payload.get("top_variables", [])[:top_limit]
+                report_payload["most_common_codes"] = report_payload.get("most_common_codes", [])[:top_limit]
             results.append({
                 "profile": name,
                 "path": str(env_path),
-                "report": report.to_dict(),
+                "report": report_payload,
                 "summary": summary,
-                "warnings": _summarize_warnings(report),
+                "warnings": warnings_summary,
             })
         else:
             console.rule(f"Profile: {name}")
             render_validation_report(report, source=str(env_path))
-        if not report.is_success or (fail_on_warnings and report.warning_count > 0):
+        if report.has_errors or (fail_on_warnings and report.has_warnings):
             exit_code = 1
+    aggregated_most_common_codes = sorted(
+        aggregated_codes.items(),
+        key=lambda item: (-item[1], item[0]),
+    )
+    aggregated_variables_list = sorted(
+        aggregated_variables,
+        key=lambda name: (name.casefold(), name),
+    )
+    aggregated_top_variables = sorted(
+        aggregated_variable_counts.items(),
+        key=lambda item: (-item[1], item[0]),
+    )
+    if top_limit == 0:
+        aggregated_most_common_codes = []
+        aggregated_top_variables = []
+    else:
+        aggregated_most_common_codes = aggregated_most_common_codes[:top_limit]
+        aggregated_top_variables = aggregated_top_variables[:top_limit]
     if use_json:
-        _emit_doctor_json(results, allow_extra=allow_extra, fail_on_warnings=fail_on_warnings)
+        _emit_doctor_json(
+            results,
+            allow_extra=allow_extra,
+            fail_on_warnings=fail_on_warnings,
+            top_limit=top_limit,
+            aggregated_codes=aggregated_most_common_codes,
+            aggregated_top_variables=aggregated_top_variables,
+            aggregated_variables=aggregated_variables_list,
+        )
+    else:
+        console.rule("Doctor Summary")
+        console.print(
+            f"Profiles checked: {checked_profiles}/{len(selected)}"
+        )
+        console.print(
+            " · ".join(
+                [
+                    f"Missing profiles: {missing_profiles}",
+                    f"Total errors: {total_errors}",
+                    f"Total warnings: {total_warnings}",
+                    f"Total info: {total_info}",
+                ]
+            )
+        )
+        console.print(
+            "Warnings breakdown: "
+            f"Duplicates: {aggregate_warning_counts['duplicates']} · "
+            f"Extra variables: {aggregate_warning_counts['extra_variables']} · "
+            f"Invalid lines: {aggregate_warning_counts['invalid_lines']}"
+        )
+        if aggregate_issue_variables and top_limit != 0:
+            sorted_variables = sorted(
+                aggregate_issue_variables,
+                key=lambda name: (name.casefold(), name),
+            )
+            console.print(
+                "Impacted variables: "
+                + ", ".join(sorted_variables[:top_limit])
+            )
+        if aggregated_most_common_codes:
+            formatted_codes = ", ".join(
+                f"{code}({count})"
+                for code, count in aggregated_most_common_codes[:5]
+            )
+            console.print(f"Top issue codes: {formatted_codes}")
+        if aggregated_top_variables and top_limit != 0:
+            formatted_variables = ", ".join(
+                f"{variable}({count})"
+                for variable, count in aggregated_top_variables[:5]
+            )
+            console.print(f"Top impacted variables: {formatted_variables}")
     raise typer.Exit(code=exit_code)
 
 
 def _summarize_warnings(report: ValidationReport) -> dict[str, Any]:
-    duplicates = [issue.variable for issue in report.issues if issue.code == "duplicate"]
-    extras = [issue.variable for issue in report.issues if issue.code == "extra"]
+    duplicates = sorted({issue.variable for issue in report.issues_by_code("duplicate")}, key=str.casefold)
+    extras = sorted({issue.variable for issue in report.issues_by_code("extra")}, key=str.casefold)
+
+    def _line_payload(issue: ValidationIssue) -> dict[str, Any]:
+        return {"line": issue.variable, "hint": issue.hint or issue.message}
+
+    def _line_key(value: str) -> tuple[int, str]:
+        digits = "".join(char for char in value if char.isdigit())
+        number = int(digits) if digits else 0
+        return number, value
+
     invalid_lines = [
-        {"line": issue.variable, "hint": issue.hint or issue.message}
-        for issue in report.issues
-        if issue.code == "invalid_line"
+        _line_payload(issue)
+        for issue in report.issues_by_code("invalid_line")
     ]
+    invalid_lines.sort(key=lambda item: _line_key(item["line"]))
     return {
         "total": report.warning_count,
         "duplicates": duplicates,
@@ -502,27 +722,40 @@ def render_validation_report(report: ValidationReport, *, source: str) -> None:
     if not report.issues:
         console.print("[green]All checks passed.[/green]")
         return
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Severity")
-    table.add_column("Variable")
-    table.add_column("Code")
-    table.add_column("Message")
-    table.add_column("Hint", overflow="fold")
-    for issue in report.issues:
-        style = {
-            IssueSeverity.ERROR: "red",
-            IssueSeverity.WARNING: "yellow",
-            IssueSeverity.INFO: "blue",
-        }[issue.severity]
-        table.add_row(
-            f"[{style}]{issue.severity.value.upper()}[/{style}]",
-            issue.variable,
-            issue.code,
-            issue.message,
-            issue.hint or "",
-        )
-    console.print(table)
-    console.print(f"Errors: {report.error_count} · Warnings: {report.warning_count}")
+    style_map = {
+        IssueSeverity.ERROR: "red",
+        IssueSeverity.WARNING: "yellow",
+        IssueSeverity.INFO: "blue",
+    }
+    label_map = {
+        IssueSeverity.ERROR: "Errors",
+        IssueSeverity.WARNING: "Warnings",
+        IssueSeverity.INFO: "Info",
+    }
+    first_section = True
+    for severity in report.non_empty_severities():
+        issues = report.issues_by_severity(severity)
+        if not first_section:
+            console.print()
+        first_section = False
+        console.print(f"[bold underline]{label_map[severity]}[/]")
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Severity")
+        table.add_column("Variable")
+        table.add_column("Code")
+        table.add_column("Message")
+        table.add_column("Hint", overflow="fold")
+        style = style_map[severity]
+        for issue in issues:
+            table.add_row(
+                f"[{style}]{severity.value.upper()}[/{style}]",
+                issue.variable,
+                issue.code,
+                issue.message,
+                issue.hint or "",
+            )
+        console.print(table)
+    console.print(_format_severity_summary(report))
 
 
 def render_diff_report(report: DiffReport, *, left: str, right: str) -> None:
@@ -530,19 +763,38 @@ def render_diff_report(report: DiffReport, *, left: str, right: str) -> None:
     if report.is_clean():
         console.print("[green]No drift detected.[/green]")
         return
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Variable")
-    table.add_column("Change")
-    table.add_column("Left")
-    table.add_column("Right")
-    for entry in report.entries:
-        table.add_row(
-            entry.variable,
-            entry.kind.value,
-            entry.redacted_left() or "",
-            entry.redacted_right() or "",
-        )
-    console.print(table)
+    style_map = {
+        DiffKind.MISSING: "yellow",
+        DiffKind.EXTRA: "blue",
+        DiffKind.CHANGED: "red",
+    }
+    label_map = {
+        DiffKind.MISSING: "Missing",
+        DiffKind.EXTRA: "Extra",
+        DiffKind.CHANGED: "Changed",
+    }
+    first_section = True
+    for kind in report.non_empty_kinds():
+        entries = report.entries_by_kind(kind)
+        if not first_section:
+            console.print()
+        first_section = False
+        console.print(f"[bold underline]{label_map[kind]}[/]")
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Variable")
+        table.add_column("Change")
+        table.add_column("Left")
+        table.add_column("Right")
+        style = style_map[kind]
+        for entry in entries:
+            table.add_row(
+                entry.variable,
+                f"[{style}]{entry.kind.value.upper()}[/{style}]",
+                entry.redacted_left() or "",
+                entry.redacted_right() or "",
+            )
+        console.print(table)
+    console.print(_format_diff_summary(report))
     console.print(f"Total differences: {report.change_count}")
 
 

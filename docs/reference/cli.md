@@ -24,7 +24,8 @@ Exit codes:
 
 `envkeep check` also emits warnings for duplicate key declarations so that drift is caught early.
 Pass `-` instead of a path to read the environment from `stdin` (useful in pipelines).
-JSON output returns an object with `report` (full issue list) and `summary` (severity totals and counts per code).
+JSON output returns an object with `report` (including `issue_count`, `severity_totals`, per-code counts, non-empty severities, most-common codes, ordered `variables`, `variables_by_severity`, and `top_variables`) and `summary` mirroring those keys (`severity_totals`, per-code counts, `issue_count`, `has_*` booleans, `non_empty_severities`, `most_common_codes`, `variables`, `variables_by_severity`, `top_variables`).
+Text output groups issues by severity with Rich tables, keeps entries alphabetised within each section, and ends with a one-line summary (`Errors`, `Warnings`, `Info`) plus an `Impacted` list of the top variables derived from cached counts on `ValidationReport`.
 
 ## `envkeep diff`
 Compare two environment files with normalization and secret redaction.
@@ -34,7 +35,8 @@ envkeep diff .env staging.env --spec envkeep.toml
 ```
 
 Exit codes mirror `check` (non-zero when drift is detected).
-JSON output includes both the full entry list under `report` and a `summary` with counts per diff kind.
+JSON output includes both the full entry list under `report` (now enriched with `is_clean`, `by_kind`, the ordered `variables` list, `non_empty_kinds`, `variables_by_kind`, and `top_variables`) and a `summary` with counts per diff kind plus an `is_clean` flag and the same variables metadata.
+Text output renders one table per diff kind (Missing/Extra/Changed), keeps entries sorted alphabetically, and finishes with a summary line showing the per-kind totals, a comma-separated `Impacted` list of the top variables, and the total change count.
 
 ## `envkeep generate`
 Emit a sanitized `.env.example`.
@@ -65,6 +67,8 @@ Options:
 - `--allow-extra` to suppress warnings for undeclared variables
 - `--format text|json` (default `text`) for machine-readable summaries
 - `--fail-on-warnings` to fail the run if any profile reports warnings
+- `--summary-top N` (default `3`) to include up to `N` top impacted variables/codes in summaries (`0` disables the lists)
 
 Exit code aggregates results across profiles (non-zero if any profile fails).
-With `--format json`, the command prints an object containing each profile report and omits the Rich table output. Each profile entry includes `report`, `summary`, and `warnings`, and the top-level payload exposes an aggregated `summary` for all profiles plus the `warnings` field (duplicate keys, extra variables, malformed lines) for downstream automation.
+With `--format json`, the command prints an object containing each profile report and omits the Rich table output. Each profile entry includes `report`, `summary`, and `warnings`. The per-profile summary mirrors `envkeep check` (issue counts plus `has_*` flags, `non_empty_severities`, `most_common_codes`, ordered `variables`, `variables_by_severity`, and `top_variables`), and the top-level payload exposes both an aggregated `summary` (profiles checked, missing profiles, severity totals, success flag, aggregated `non_empty_severities`, `most_common_codes`, `variables`, and `top_variables`) and a `warnings` field with deduplicated, alphabetised duplicate/extra variables along with per-profile invalid line details for automation.
+When rendered as text, Envkeep prints a `Doctor Summary` block with totals for missing profiles, severities, a warnings breakdown, an alphabetical list of impacted variables, and a `Top impacted variables` line that highlights the most frequent offenders with their counts.

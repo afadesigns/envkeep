@@ -22,10 +22,17 @@ All checks passed.
 
 $ envkeep diff examples/basic/.env.dev examples/basic/.env.prod --spec examples/basic/envkeep.toml
 Diffing examples/basic/.env.dev -> examples/basic/.env.prod
-Variable        Change   Left                 Right
---------------- -------- ------------------- -------------------
-ALLOWED_HOSTS   changed  localhost,api.local  app.example.com
-Total differences: 1
+Changed
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Variable      ┃ Change  ┃ Left                ┃ Right           ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ ALLOWED_HOSTS │ CHANGED │ localhost,api.local │ app.example.com │
+│ API_TOKEN     │ CHANGED │ ***                 │ ***             │
+│ DATABASE_URL  │ CHANGED │ ***                 │ ***             │
+│ DEBUG         │ CHANGED │ true                │ false           │
+└───────────────┴─────────┴─────────────────────┴─────────────────┘
+Changed: 4 · Impacted: ALLOWED_HOSTS, API_TOKEN, DATABASE_URL
+Total differences: 4
 ```
 
 ## Quickstart
