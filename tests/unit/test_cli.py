@@ -3,16 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+import typer
 from typer.testing import CliRunner
 
 from envkeep.cli import app
+from envkeep.cli import check as cli_check
+from envkeep.cli import diff as cli_diff
+from envkeep.cli import doctor as cli_doctor
 
 runner = CliRunner()
 EXAMPLE_SPEC = Path("examples/basic/envkeep.toml")
 DEV_ENV = Path("examples/basic/.env.dev")
 PROD_ENV = Path("examples/basic/.env.prod")
-
-
 def test_cli_check_success() -> None:
     result = runner.invoke(app, ["check", str(DEV_ENV), "--spec", str(EXAMPLE_SPEC)])
     assert result.exit_code == 0
@@ -298,6 +301,47 @@ def test_cli_doctor_json_warnings(tmp_path: Path) -> None:
     assert aggregated["invalid_lines"][0]["line"].startswith("line")
 
 
+def test_cli_doctor_json_summary_top_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    env_file = tmp_path / "warn.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "BROKEN",
+                "DATABASE_URL=postgresql://localhost/dev",
+                "DATABASE_URL=postgresql://localhost/prod",
+                "DEBUG=false",
+                "ALLOWED_HOSTS=localhost",
+                "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
+                "EXTRA=value",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    spec_text = EXAMPLE_SPEC.read_text().replace("examples/basic/.env.dev", str(env_file))
+    spec_copy = tmp_path / "envkeep.toml"
+    spec_copy.write_text(spec_text, encoding="utf-8")
+    with pytest.raises(typer.Exit) as excinfo:
+        cli_doctor(
+            spec=spec_copy,
+            profile="all",
+            allow_extra=False,
+            output_format="json",
+            fail_on_warnings=False,
+            summary_top=0,
+        )
+    assert excinfo.value.exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    profile = payload["profiles"][0]
+    assert profile["summary"]["top_variables"] == []
+    assert profile["summary"]["most_common_codes"] == []
+    assert payload["summary"]["top_variables"] == []
+    assert payload["summary"]["most_common_codes"] == []
+    warnings = payload["warnings"]
+    assert warnings["duplicates"] == ["DATABASE_URL"]
+    assert warnings["extra_variables"] == ["EXTRA"]
+    assert warnings["invalid_lines"][0]["profile"] == "development"
+
+
 def test_cli_check_json_summary_reports_issue_flags(tmp_path: Path) -> None:
     env_file = tmp_path / "bad.env"
     env_file.write_text(
@@ -338,6 +382,62 @@ def test_cli_check_json_summary_reports_issue_flags(tmp_path: Path) -> None:
     assert report_payload["variables"]
     assert report_payload["most_common_codes"][0][0] in {"duplicate", "extra"}
     assert report_payload["top_variables"]
+
+
+def test_cli_check_summary_top_zero_suppresses_impacted(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    env_file = tmp_path / "bad.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "DATABASE_URL=postgresql://localhost/dev",
+                "API_TOKEN=invalid-token",
+                "EXTRA=value",
+                "API_TOKEN=override",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(typer.Exit) as excinfo:
+        cli_check(
+            env_file=env_file,
+            spec=EXAMPLE_SPEC,
+            output_format="text",
+            allow_extra=False,
+            fail_on_warnings=False,
+            summary_top=0,
+        )
+    assert excinfo.value.exit_code == 1
+    output = capsys.readouterr().out
+    assert "Impacted:" not in output
+
+
+def test_cli_check_json_respects_summary_top(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    env_file = tmp_path / "bad.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "DATABASE_URL=postgresql://localhost/dev",
+                "API_TOKEN=invalid-token",
+                "EXTRA=value",
+                "API_TOKEN=override",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(typer.Exit) as excinfo:
+        cli_check(
+            env_file=env_file,
+            spec=EXAMPLE_SPEC,
+            output_format="json",
+            allow_extra=False,
+            fail_on_warnings=False,
+            summary_top=1,
+        )
+    assert excinfo.value.exit_code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["summary"]["top_variables"]) == 1
+    assert len(payload["report"]["top_variables"]) == 1
+    assert payload["summary"]["top_variables"][0][0] == "API_TOKEN"
 
 
 def test_cli_doctor_text_highlights_impacted_variables(tmp_path: Path) -> None:
@@ -442,8 +542,10 @@ def test_cli_diff_json_summary(tmp_path: Path) -> None:
             "json",
         ],
     )
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
+    assert result.exit_code == 0, result.stderr
+    stdout = result.stdout or result.output
+    assert stdout
+    payload = json.loads(stdout)
     assert payload["summary"]["is_clean"] is True
     assert payload["summary"]["by_kind"]["changed"] == 0
     assert payload["summary"]["non_empty_kinds"] == []
@@ -455,6 +557,33 @@ def test_cli_diff_json_summary(tmp_path: Path) -> None:
     assert report_payload["variables"] == []
     assert report_payload["top_variables"] == []
 
+
+def test_cli_diff_summary_top_zero_omits_impacted(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    left = tmp_path / "left.env"
+    right = tmp_path / "right.env"
+    left.write_text(DEV_ENV.read_text(), encoding="utf-8")
+    right.write_text(
+        "\n".join(
+            [
+                "DATABASE_URL=postgresql://localhost:5432/devdb",
+                "DEBUG=false",
+                "ALLOWED_HOSTS=localhost,api.local",
+                "EXTRA_VAR=value",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(typer.Exit) as excinfo:
+        cli_diff(
+            first=left,
+            second=right,
+            spec=EXAMPLE_SPEC,
+            output_format="text",
+            summary_top=0,
+        )
+    assert excinfo.value.exit_code == 1
+    output = capsys.readouterr().out
+    assert "Impacted:" not in output
 
 
 def test_cli_diff_text_summary_breakdown(tmp_path: Path) -> None:

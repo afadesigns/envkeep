@@ -184,7 +184,14 @@ class ValidationReport:
         )
         return tuple(severity for severity in order if self._severity_counts.get(severity, 0) > 0)
 
-    def to_dict(self) -> dict[str, Any]:
+    @staticmethod
+    def _normalize_limit(limit: int | None) -> int | None:
+        if limit is None:
+            return None
+        return max(limit, 0)
+
+    def to_dict(self, *, top_limit: int | None = None) -> dict[str, Any]:
+        limit = self._normalize_limit(top_limit)
         return {
             "is_success": self.is_success,
             "error_count": self.error_count,
@@ -192,15 +199,16 @@ class ValidationReport:
             "issue_count": self.issue_count,
             "severity_totals": self.severity_totals(),
             "codes": self.counts_by_code(),
-            "most_common_codes": self.most_common_codes(),
+            "most_common_codes": self.most_common_codes(limit),
             "non_empty_severities": [severity.value for severity in self.non_empty_severities()],
             "variables": list(self.variables()),
             "variables_by_severity": self.variables_by_severity(),
-            "top_variables": self.top_variables(),
+            "top_variables": self.top_variables(limit),
             "issues": [issue.to_dict() for issue in self.issues],
         }
 
-    def summary(self) -> dict[str, Any]:
+    def summary(self, *, top_limit: int | None = None) -> dict[str, Any]:
+        limit = self._normalize_limit(top_limit)
         return {
             "is_success": self.is_success,
             "has_errors": self.has_errors,
@@ -209,11 +217,11 @@ class ValidationReport:
             "issue_count": self.issue_count,
             "severity_totals": self.severity_totals(),
             "codes": self.counts_by_code(),
-            "most_common_codes": self.most_common_codes(),
+            "most_common_codes": self.most_common_codes(limit),
             "non_empty_severities": [severity.value for severity in self.non_empty_severities()],
             "variables": list(self.variables()),
             "variables_by_severity": self.variables_by_severity(),
-            "top_variables": self.top_variables(),
+            "top_variables": self.top_variables(limit),
         }
 
     def issues_by_severity(self, severity: IssueSeverity) -> list[ValidationIssue]:
@@ -306,14 +314,21 @@ class DiffReport:
         self.entries.append(entry)
         self._track_entry(entry)
 
-    def to_dict(self) -> dict[str, Any]:
+    @staticmethod
+    def _normalize_limit(limit: int | None) -> int | None:
+        if limit is None:
+            return None
+        return max(limit, 0)
+
+    def to_dict(self, *, top_limit: int | None = None) -> dict[str, Any]:
+        limit = self._normalize_limit(top_limit)
         return {
             "change_count": self.change_count,
             "is_clean": self.is_clean(),
             "by_kind": self.counts_by_kind(),
             "entries": [entry.to_dict() for entry in self.entries],
             "variables": list(self.variables()),
-            "top_variables": self.top_variables(),
+            "top_variables": self.top_variables(limit),
             "variables_by_kind": self.variables_by_kind(),
             "non_empty_kinds": [kind.value for kind in self.non_empty_kinds()],
         }
@@ -384,14 +399,15 @@ class DiffReport:
             for kind in self._kind_order
         }
 
-    def summary(self) -> dict[str, Any]:
+    def summary(self, *, top_limit: int | None = None) -> dict[str, Any]:
+        limit = self._normalize_limit(top_limit)
         return {
             "change_count": self.change_count,
             "is_clean": self.is_clean(),
             "by_kind": self.counts_by_kind(),
             "non_empty_kinds": [kind.value for kind in self.non_empty_kinds()],
             "variables": list(self.variables()),
-            "top_variables": self.top_variables(),
+            "top_variables": self.top_variables(limit),
             "variables_by_kind": self.variables_by_kind(),
         }
 

@@ -35,6 +35,8 @@ Changed: 4 · Impacted: ALLOWED_HOSTS, API_TOKEN, DATABASE_URL
 Total differences: 4
 ```
 
+Tune the summary footprint with `--summary-top`: raise it to see more impacted variables or set it to `0` to hide the list entirely (available on `check`, `diff`, and `doctor`).
+
 ## Quickstart
 1. Install: `pip install envkeep`
 2. Create `envkeep.toml`:
@@ -62,6 +64,7 @@ See [`examples/basic`](examples/basic) for a complete spec and environment pair.
 - Rich inspection tooling to summarize variables and profiles (`envkeep inspect`, JSON-ready output).
 - Secrets-aware diffing that redacts sensitive values.
 - Profiles support for multi-stage environments validated via `envkeep doctor`.
+- Configurable summaries that bound the "top variables" lists via `--summary-top` in `check`, `diff`, and `doctor`.
 - MkDocs-powered documentation with mkdocstrings API reference.
 - First-class CI workflows for linting, typing, testing, docs, and release automation.
 

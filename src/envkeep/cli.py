@@ -99,6 +99,12 @@ def _emit_json(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2))
 
 
+def _normalized_limit(limit: int | None) -> int | None:
+    if limit is None:
+        return None
+    return max(limit, 0)
+
+
 def _usage_error(message: str) -> None:
     """Emit a usage error to stderr and exit with the conventional code."""
 
@@ -112,12 +118,17 @@ def _handle_validation_output(
     source: str,
     output_format: OutputFormat,
     fail_on_warnings: bool,
+    summary_top: int | None,
 ) -> int:
+    limit = _normalized_limit(summary_top)
     if output_format is OutputFormat.JSON:
-        payload = {"report": report.to_dict(), "summary": report.summary()}
+        payload = {
+            "report": report.to_dict(top_limit=limit),
+            "summary": report.summary(top_limit=limit),
+        }
         _emit_json(payload)
     else:
-        render_validation_report(report, source=source)
+        render_validation_report(report, source=source, top_limit=limit)
     exit_code = 0
     if report.has_errors or (fail_on_warnings and report.has_warnings):
         exit_code = 1
@@ -130,16 +141,22 @@ def _handle_diff_output(
     left: str,
     right: str,
     output_format: OutputFormat,
+    summary_top: int | None,
 ) -> int:
+    limit = _normalized_limit(summary_top)
     if output_format is OutputFormat.JSON:
-        payload = {"report": report.to_dict(), "summary": report.summary()}
+        payload = {
+            "report": report.to_dict(top_limit=limit),
+            "summary": report.summary(top_limit=limit),
+        }
         _emit_json(payload)
     else:
-        render_diff_report(report, left=left, right=right)
+        render_diff_report(report, left=left, right=right, top_limit=limit)
     return 0 if report.is_clean() else 1
 
 
-def _format_severity_summary(report: ValidationReport) -> str:
+def _format_severity_summary(report: ValidationReport, *, top_limit: int | None) -> str:
+    limit = _normalized_limit(top_limit)
     totals = report.severity_totals()
     ordered = [
         ("Errors", IssueSeverity.ERROR.value),
@@ -153,13 +170,19 @@ def _format_severity_summary(report: ValidationReport) -> str:
     ]
     if not parts:
         parts = [f"{label}: {totals[key]}" for label, key in ordered]
-    top_variables = [name for name, _ in report.top_variables(3)]
+    if limit is None:
+        top_variables = [name for name, _ in report.top_variables()]
+    elif limit == 0:
+        top_variables = []
+    else:
+        top_variables = [name for name, _ in report.top_variables(limit)]
     if top_variables:
         parts.append("Impacted: " + ", ".join(top_variables))
     return " · ".join(parts)
 
 
-def _format_diff_summary(report: DiffReport) -> str:
+def _format_diff_summary(report: DiffReport, *, top_limit: int | None) -> str:
+    limit = _normalized_limit(top_limit)
     summary = report.counts_by_kind()
     ordered = [
         ("Missing", DiffKind.MISSING.value),
@@ -173,7 +196,12 @@ def _format_diff_summary(report: DiffReport) -> str:
     ]
     if not parts:
         parts = [f"{label}: {summary[key]}" for label, key in ordered]
-    top_variables = [name for name, _ in report.top_variables(3)]
+    if limit is None:
+        top_variables = [name for name, _ in report.top_variables()]
+    elif limit == 0:
+        top_variables = []
+    else:
+        top_variables = [name for name, _ in report.top_variables(limit)]
     if top_variables:
         parts.append("Impacted: " + ", ".join(top_variables))
     return " · ".join(parts)
@@ -332,6 +360,11 @@ def check(
         is_flag=True,
         flag_value=True,
     ),
+    summary_top: int = typer.Option(
+        3,
+        "--summary-top",
+        help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
+    ),
 ) -> None:
     """Validate an environment against the specification."""
 
@@ -356,6 +389,7 @@ def check(
         source=str(env_file),
         output_format=fmt,
         fail_on_warnings=fail_on_warnings,
+        summary_top=summary_top,
     )
     raise typer.Exit(code=exit_code)
 
@@ -366,6 +400,11 @@ def diff(
     second: Path = typer.Argument(..., help="Target environment file."),
     spec: Path = _spec_option(),
     output_format: str = _format_option(),
+    summary_top: int = typer.Option(
+        3,
+        "--summary-top",
+        help="Limit top impacted variables shown in summaries (0 to suppress).",
+    ),
 ) -> None:
     """Compare two environment files using the spec for normalization."""
 
@@ -398,6 +437,7 @@ def diff(
         left=str(first),
         right=str(second),
         output_format=fmt,
+        summary_top=summary_top,
     )
     raise typer.Exit(code=exit_code)
 
@@ -560,7 +600,7 @@ def doctor(
     aggregated_codes: Counter[str] = Counter()
     aggregated_variables: set[str] = set()
     aggregated_variable_counts: Counter[str] = Counter()
-    top_limit = summary_top if summary_top >= 0 else 0
+    top_limit = _normalized_limit(summary_top) or 0
     for name, env_path in selected:
         if not env_path.exists():
             missing_profiles += 1
@@ -586,27 +626,15 @@ def doctor(
         aggregate_warning_counts["duplicates"] += len(warnings_summary["duplicates"])
         aggregate_warning_counts["extra_variables"] += len(warnings_summary["extra_variables"])
         aggregate_warning_counts["invalid_lines"] += len(warnings_summary["invalid_lines"])
-        summary_data = report.summary()
-        aggregate_issue_variables.update(summary_data.get("variables", []))
-        aggregated_codes.update(summary_data.get("codes", {}))
-        aggregated_variables.update(summary_data.get("variables", ()))
-        for variable, count in summary_data.get("top_variables", []):
+        full_summary = report.summary()
+        aggregate_issue_variables.update(full_summary.get("variables", []))
+        aggregated_codes.update(full_summary.get("codes", {}))
+        aggregated_variables.update(full_summary.get("variables", ()))
+        for variable, count in full_summary.get("top_variables", []):
             aggregated_variable_counts[variable] += count
-        if top_limit == 0:
-            summary_data["top_variables"] = []
-            summary_data["most_common_codes"] = []
-        else:
-            summary_data["top_variables"] = summary_data.get("top_variables", [])[:top_limit]
-            summary_data["most_common_codes"] = summary_data.get("most_common_codes", [])[:top_limit]
         if use_json:
-            summary = summary_data
-            report_payload = report.to_dict()
-            if top_limit == 0:
-                report_payload["top_variables"] = []
-                report_payload["most_common_codes"] = []
-            else:
-                report_payload["top_variables"] = report_payload.get("top_variables", [])[:top_limit]
-                report_payload["most_common_codes"] = report_payload.get("most_common_codes", [])[:top_limit]
+            summary = report.summary(top_limit=top_limit)
+            report_payload = report.to_dict(top_limit=top_limit)
             results.append({
                 "profile": name,
                 "path": str(env_path),
@@ -616,7 +644,7 @@ def doctor(
             })
         else:
             console.rule(f"Profile: {name}")
-            render_validation_report(report, source=str(env_path))
+            render_validation_report(report, source=str(env_path), top_limit=top_limit)
         if report.has_errors or (fail_on_warnings and report.has_warnings):
             exit_code = 1
     aggregated_most_common_codes = sorted(
@@ -717,7 +745,12 @@ def _summarize_warnings(report: ValidationReport) -> dict[str, Any]:
     }
 
 
-def render_validation_report(report: ValidationReport, *, source: str) -> None:
+def render_validation_report(
+    report: ValidationReport,
+    *,
+    source: str,
+    top_limit: int | None = None,
+) -> None:
     console.print(f"Validating [bold]{source}[/bold]")
     if not report.issues:
         console.print("[green]All checks passed.[/green]")
@@ -755,10 +788,16 @@ def render_validation_report(report: ValidationReport, *, source: str) -> None:
                 issue.hint or "",
             )
         console.print(table)
-    console.print(_format_severity_summary(report))
+    console.print(_format_severity_summary(report, top_limit=top_limit))
 
 
-def render_diff_report(report: DiffReport, *, left: str, right: str) -> None:
+def render_diff_report(
+    report: DiffReport,
+    *,
+    left: str,
+    right: str,
+    top_limit: int | None = None,
+) -> None:
     console.print(f"Diffing [bold]{left}[/bold] -> [bold]{right}[/bold]")
     if report.is_clean():
         console.print("[green]No drift detected.[/green]")
@@ -794,7 +833,7 @@ def render_diff_report(report: DiffReport, *, left: str, right: str) -> None:
                 entry.redacted_right() or "",
             )
         console.print(table)
-    console.print(_format_diff_summary(report))
+    console.print(_format_diff_summary(report, top_limit=top_limit))
     console.print(f"Total differences: {report.change_count}")
 
 

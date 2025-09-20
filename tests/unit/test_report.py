@@ -82,6 +82,12 @@ def test_validation_report_summary_counts() -> None:
         IssueSeverity.INFO.value,
     ]
     assert payload["variables"] == ["A", "B", "C"]
+    limited_summary = report.summary(top_limit=1)
+    assert limited_summary["top_variables"] == [("A", 1)]
+    assert limited_summary["most_common_codes"] == [("extra", 1)]
+    limited_payload = report.to_dict(top_limit=0)
+    assert limited_payload["top_variables"] == []
+    assert limited_payload["most_common_codes"] == []
     totals = report.severity_totals()
     assert totals == {"error": 1, "warning": 1, "info": 1}
     assert report.has_errors is True
@@ -143,6 +149,10 @@ def test_diff_report_summary_counts() -> None:
         ("B", 1),
         ("C", 1),
     ]
+    limited_summary = report.summary(top_limit=1)
+    assert limited_summary["top_variables"] == [("A", 1)]
+    limited_payload = report.to_dict(top_limit=0)
+    assert limited_payload["top_variables"] == []
     assert summary["non_empty_kinds"] == [
         DiffKind.MISSING.value,
         DiffKind.EXTRA.value,

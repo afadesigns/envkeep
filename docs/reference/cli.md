@@ -17,6 +17,7 @@ Options:
 - `--format text|json` (default `text`)
 - `--allow-extra` to ignore undeclared variables
 - `--fail-on-warnings` to make any warnings exit non-zero (e.g., duplicate or invalid lines)
+- `--summary-top N` (default `3`) to cap the number of top variables/codes reported in JSON and text summaries (`0` hides the lists)
 
 Exit codes:
 - `0` – success
@@ -24,8 +25,8 @@ Exit codes:
 
 `envkeep check` also emits warnings for duplicate key declarations so that drift is caught early.
 Pass `-` instead of a path to read the environment from `stdin` (useful in pipelines).
-JSON output returns an object with `report` (including `issue_count`, `severity_totals`, per-code counts, non-empty severities, most-common codes, ordered `variables`, `variables_by_severity`, and `top_variables`) and `summary` mirroring those keys (`severity_totals`, per-code counts, `issue_count`, `has_*` booleans, `non_empty_severities`, `most_common_codes`, `variables`, `variables_by_severity`, `top_variables`).
-Text output groups issues by severity with Rich tables, keeps entries alphabetised within each section, and ends with a one-line summary (`Errors`, `Warnings`, `Info`) plus an `Impacted` list of the top variables derived from cached counts on `ValidationReport`.
+JSON output returns an object with `report` (including `issue_count`, `severity_totals`, per-code counts, non-empty severities, most-common codes, ordered `variables`, `variables_by_severity`, and `top_variables`) and `summary` mirroring those keys. Both payloads honour `--summary-top`, so the `most_common_codes`/`top_variables` lists shrink to at most `N` entries (or disappear when `0`).
+Text output groups issues by severity with Rich tables, keeps entries alphabetised within each section, and ends with a one-line summary (`Errors`, `Warnings`, `Info`) plus an `Impacted` list of the top variables (respecting the `--summary-top` limit) derived from cached counts on `ValidationReport`.
 
 ## `envkeep diff`
 Compare two environment files with normalization and secret redaction.
@@ -34,9 +35,12 @@ Compare two environment files with normalization and secret redaction.
 envkeep diff .env staging.env --spec envkeep.toml
 ```
 
+Options:
+- `--summary-top N` (default `3`) to limit top impacted variables in summaries (`0` hides the lists)
+
 Exit codes mirror `check` (non-zero when drift is detected).
-JSON output includes both the full entry list under `report` (now enriched with `is_clean`, `by_kind`, the ordered `variables` list, `non_empty_kinds`, `variables_by_kind`, and `top_variables`) and a `summary` with counts per diff kind plus an `is_clean` flag and the same variables metadata.
-Text output renders one table per diff kind (Missing/Extra/Changed), keeps entries sorted alphabetically, and finishes with a summary line showing the per-kind totals, a comma-separated `Impacted` list of the top variables, and the total change count.
+JSON output includes both the full entry list under `report` (now enriched with `is_clean`, `by_kind`, the ordered `variables` list, `non_empty_kinds`, `variables_by_kind`, and `top_variables`) and a `summary` with counts per diff kind plus an `is_clean` flag and the same variables metadata. The `top_variables` list honours `--summary-top`.
+Text output renders one table per diff kind (Missing/Extra/Changed), keeps entries sorted alphabetically, and finishes with a summary line showing the per-kind totals, a comma-separated `Impacted` list of the top variables (bounded by `--summary-top`), and the total change count.
 
 ## `envkeep generate`
 Emit a sanitized `.env.example`.
