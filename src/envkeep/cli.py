@@ -7,7 +7,7 @@ from collections import Counter
 from collections.abc import Iterable
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -17,6 +17,13 @@ from ._compat import tomllib
 from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
 from .spec import EnvSpec, ProfileSpec
+from .utils import (
+    OptionalPath,
+    casefold_sorted,
+    normalized_limit,
+    resolve_optional_path_option,
+    sorted_counter,
+)
 
 try:  # pragma: no cover - Click 8.0 compatibility
     from click._utils import UNSET as _CLICK_UNSET
@@ -79,6 +86,11 @@ PROFILE_OPTION = _option_with_value(
     help="Profile to validate (all to run every profile).",
 )
 PROFILE_OPTION.show_default = True
+PROFILE_BASE_OPTION = _option_with_value(
+    None,
+    "--profile-base",
+    help="Override the base directory used to resolve relative profile env_file paths.",
+)
 GENERATE_OUTPUT_OPTION = _option_with_value(
     None,
     "--output",
@@ -107,22 +119,6 @@ def _resolve_profile_path(raw: str, *, base_dir: Path) -> Path:
     if raw == "-" or candidate.is_absolute():
         return candidate
     return (base_dir / candidate).resolve()
-
-
-def _casefold_sorted(values: Iterable[str]) -> list[str]:
-    return sorted(values, key=lambda name: (name.casefold(), name))
-
-
-def _sorted_counter(counter: Counter[str]) -> list[tuple[str, int]]:
-    return sorted(counter.items(), key=lambda item: (-item[1], item[0]))
-
-
-def _normalized_limit(limit: int | None) -> int | None:
-    if limit is None:
-        return None
-    return max(limit, 0)
-
-
 def _usage_error(message: str) -> None:
     """Emit a usage error to stderr and exit with the conventional code."""
 
@@ -138,7 +134,7 @@ def _handle_validation_output(
     fail_on_warnings: bool,
     summary_top: int | None,
 ) -> int:
-    limit = _normalized_limit(summary_top)
+    limit = normalized_limit(summary_top)
     if output_format is OutputFormat.JSON:
         payload = {
             "report": report.to_dict(top_limit=limit),
@@ -161,7 +157,7 @@ def _handle_diff_output(
     output_format: OutputFormat,
     summary_top: int | None,
 ) -> int:
-    limit = _normalized_limit(summary_top)
+    limit = normalized_limit(summary_top)
     if output_format is OutputFormat.JSON:
         payload = {
             "report": report.to_dict(top_limit=limit),
@@ -174,7 +170,7 @@ def _handle_diff_output(
 
 
 def _format_severity_summary(report: ValidationReport, *, top_limit: int | None) -> str:
-    limit = _normalized_limit(top_limit)
+    limit = normalized_limit(top_limit)
     totals = report.severity_totals()
     ordered = [
         ("Errors", IssueSeverity.ERROR.value),
@@ -199,7 +195,7 @@ def _format_severity_summary(report: ValidationReport, *, top_limit: int | None)
 
 
 def _format_diff_summary(report: DiffReport, *, top_limit: int | None) -> str:
-    limit = _normalized_limit(top_limit)
+    limit = normalized_limit(top_limit)
     summary = report.counts_by_kind()
     ordered = [
         ("Missing", DiffKind.MISSING.value),
@@ -287,8 +283,8 @@ def _emit_doctor_json(
         return int(digits) if digits else 0
 
     warnings_payload = {
-        "duplicates": _casefold_sorted(aggregated_duplicates),
-        "extra_variables": _casefold_sorted(aggregated_extras),
+        "duplicates": casefold_sorted(aggregated_duplicates),
+        "extra_variables": casefold_sorted(aggregated_extras),
         "invalid_lines": sorted(
             aggregated_invalid_lines,
             key=lambda item: (
@@ -440,7 +436,7 @@ def diff(
 @app.command()
 def generate(
     spec: Path = SPEC_OPTION,
-    output: Optional[Path] = GENERATE_OUTPUT_OPTION,
+    output: OptionalPath = GENERATE_OUTPUT_OPTION,
     no_redact_secrets: bool = typer.Option(
         False,
         "--no-redact-secrets",
@@ -451,7 +447,11 @@ def generate(
 ) -> None:
     """Generate a sanitized .env example from the spec."""
 
-    env_spec = load_spec(spec)
+    spec_path = str(spec)
+    stdin_spec: str | None = None
+    if spec_path == "-":
+        stdin_spec = sys.stdin.read()
+    env_spec = load_spec(spec, stdin_data=stdin_spec)
     content = env_spec.generate_example(redact_secrets=not no_redact_secrets)
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -465,16 +465,15 @@ def generate(
 def inspect(
     spec: Path = SPEC_OPTION,
     output_format: str = FORMAT_OPTION,
-    profile_base: Path | None = typer.Option(
-        None,
-        "--profile-base",
-        help="Override the base directory used to resolve relative profile env_file paths.",
-    ),
+    profile_base: str = PROFILE_BASE_OPTION,
 ) -> None:
     """Print a summary of variables and profiles declared in the spec."""
 
-    if isinstance(profile_base, typer.models.OptionInfo):
-        profile_base = None
+    profile_base = resolve_optional_path_option(profile_base)
+    spec_path = str(spec)
+    stdin_spec: str | None = None
+    if spec_path == "-":
+        stdin_spec = sys.stdin.read()
     spec_base = _spec_base_dir(spec)
     profile_base_dir = spec_base
     if profile_base is not None:
@@ -488,7 +487,7 @@ def inspect(
                 f"profile base '{candidate_base}' is not a directory"
             )
         profile_base_dir = candidate_base.resolve()
-    env_spec = load_spec(spec)
+    env_spec = load_spec(spec, stdin_data=stdin_spec)
     fmt = _coerce_output_format(output_format)
     if fmt is OutputFormat.JSON:
         variables_payload = [
@@ -587,18 +586,17 @@ def doctor(
         "--summary-top",
         help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
     ),
-    profile_base: Path | None = typer.Option(
-        None,
-        "--profile-base",
-        help="Override the base directory used to resolve relative profile env_file paths.",
-    ),
+    profile_base: str = PROFILE_BASE_OPTION,
 ) -> None:
     """Validate one or more profiles declared in the spec."""
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
-    if isinstance(profile_base, typer.models.OptionInfo):
-        profile_base = None
+    profile_base = resolve_optional_path_option(profile_base)
+    spec_path = str(spec)
+    stdin_spec: str | None = None
+    if spec_path == "-":
+        stdin_spec = sys.stdin.read()
     spec_base = _spec_base_dir(spec)
     profile_base_dir = spec_base
     if profile_base is not None:
@@ -612,7 +610,7 @@ def doctor(
                 f"profile base '{candidate_base}' is not a directory"
             )
         profile_base_dir = candidate_base.resolve()
-    env_spec = load_spec(spec)
+    env_spec = load_spec(spec, stdin_data=stdin_spec)
     profiles = list(env_spec.iter_profiles())
     if not profiles:
         typer.echo("No profiles declared in spec.")
@@ -652,7 +650,7 @@ def doctor(
     aggregated_codes: Counter[str] = Counter()
     aggregated_variables: set[str] = set()
     aggregated_variable_counts: Counter[str] = Counter()
-    top_limit = _normalized_limit(summary_top) or 0
+    top_limit = normalized_limit(summary_top) or 0
     resolved_profile_records: list[tuple[str, str, Path, bool]] = []
     for entry in selected_profiles:
         name = entry["name"]
@@ -708,9 +706,9 @@ def doctor(
             render_validation_report(report, source=str(env_path), top_limit=top_limit)
         if report.has_errors or (fail_on_warnings and report.has_warnings):
             exit_code = 1
-    aggregated_most_common_codes = _sorted_counter(aggregated_codes)
-    aggregated_variables_list = _casefold_sorted(aggregated_variables)
-    aggregated_top_variables = _sorted_counter(aggregated_variable_counts)
+    aggregated_most_common_codes = sorted_counter(aggregated_codes)
+    aggregated_variables_list = casefold_sorted(aggregated_variables)
+    aggregated_top_variables = sorted_counter(aggregated_variable_counts)
     if top_limit == 0:
         aggregated_most_common_codes = []
         aggregated_top_variables = []
@@ -750,7 +748,7 @@ def doctor(
             f"Invalid lines: {aggregate_warning_counts['invalid_lines']}"
         )
         if aggregate_issue_variables and top_limit != 0:
-            sorted_variables = _casefold_sorted(aggregate_issue_variables)
+            sorted_variables = casefold_sorted(aggregate_issue_variables)
             display_count = min(len(sorted_variables), top_limit)
             console.print(
                 "Impacted variables: "

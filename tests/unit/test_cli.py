@@ -163,6 +163,21 @@ def test_cli_generate_no_redact_secrets() -> None:
     assert "API_TOKEN=***" not in result.stdout
 
 
+def test_cli_generate_accepts_spec_from_stdin() -> None:
+    spec_text = EXAMPLE_SPEC.read_text(encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--spec",
+            "-",
+        ],
+        input=spec_text,
+    )
+    assert result.exit_code == 0
+    assert "DATABASE_URL=" in result.stdout
+
+
 def test_cli_doctor_resolves_relative_profiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -63,6 +63,7 @@ See [`examples/basic`](examples/basic) for a complete spec and environment pair 
 - Human-friendly and machine-readable reports (`--format text|json`).
 - Rich inspection tooling to summarize variables and profiles (`envkeep inspect`, JSON-ready output plus resolved profile paths).
 - Secrets-aware diffing that redacts sensitive values.
+- Robust `.env` parser that understands `export` syntax, quotes, escapes, and UTF-8 BOM-prefixed files.
 - Profiles support for multi-stage environments validated via `envkeep doctor`; relative profile paths resolve against the spec (override with `--profile-base`).
 - Configurable summaries that bound the "top variables" lists via `--summary-top` in `check`, `diff`, and `doctor`.
 - MkDocs-powered documentation with mkdocstrings API reference.

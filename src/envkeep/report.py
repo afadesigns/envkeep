@@ -9,6 +9,8 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, Iterator
 
+from .utils import normalized_limit
+
 
 class IssueSeverity(str, Enum):
     """Represents the severity of a validation issue."""
@@ -271,14 +273,8 @@ class ValidationReport:
         )
         return tuple(severity for severity in order if self._severity_counts.get(severity, 0) > 0)
 
-    @staticmethod
-    def _normalize_limit(limit: int | None) -> int | None:
-        if limit is None:
-            return None
-        return max(limit, 0)
-
     def to_dict(self, *, top_limit: int | None = None) -> dict[str, Any]:
-        limit = self._normalize_limit(top_limit)
+        limit = normalized_limit(top_limit)
         return {
             "is_success": self.is_success,
             "error_count": self.error_count,
@@ -295,7 +291,7 @@ class ValidationReport:
         }
 
     def summary(self, *, top_limit: int | None = None) -> dict[str, Any]:
-        limit = self._normalize_limit(top_limit)
+        limit = normalized_limit(top_limit)
         return {
             "is_success": self.is_success,
             "has_errors": self.has_errors,
@@ -501,14 +497,8 @@ class DiffReport:
         self.entries.append(entry)
         self._track_entry(entry)
 
-    @staticmethod
-    def _normalize_limit(limit: int | None) -> int | None:
-        if limit is None:
-            return None
-        return max(limit, 0)
-
     def to_dict(self, *, top_limit: int | None = None) -> dict[str, Any]:
-        limit = self._normalize_limit(top_limit)
+        limit = normalized_limit(top_limit)
         return {
             "change_count": self.change_count,
             "is_clean": self.is_clean(),
@@ -627,7 +617,7 @@ class DiffReport:
         return self._counts_by_kind_mapping
 
     def summary(self, *, top_limit: int | None = None) -> dict[str, Any]:
-        limit = self._normalize_limit(top_limit)
+        limit = normalized_limit(top_limit)
         return {
             "change_count": self.change_count,
             "is_clean": self.is_clean(),

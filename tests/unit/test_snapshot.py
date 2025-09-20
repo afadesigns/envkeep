@@ -90,3 +90,10 @@ def test_env_snapshot_marks_unterminated_quotes_invalid() -> None:
     snapshot = EnvSnapshot.from_text(raw)
     assert snapshot.get("VALID") == "value"
     assert snapshot.malformed_lines() == ((1, 'BROKEN="unterminated value'),)
+
+
+def test_env_snapshot_strips_utf8_bom() -> None:
+    raw = "\ufeffAPI_TOKEN=secret\n"
+    snapshot = EnvSnapshot.from_text(raw)
+    assert snapshot.get("API_TOKEN") == "secret"
+    assert snapshot.malformed_lines() == ()

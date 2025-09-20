@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from .utils import strip_bom
+
 _ENV_LINE_RE = re.compile(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<value>.*)$")
 
 _UNESCAPE_MAP = {
@@ -103,6 +105,7 @@ class EnvSnapshot:
 
 
 def _parse_env(raw: str) -> tuple[dict[str, str], tuple[str, ...], tuple[tuple[int, str], ...]]:
+    raw = strip_bom(raw)
     result: dict[str, str] = {}
     duplicates: list[str] = []
     invalid: list[tuple[int, str]] = []
