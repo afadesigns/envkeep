@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+"""Reporting utilities with copy-on-read caches for envkeep CLI output."""
+
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Iterator, Mapping
+from typing import Any, Iterator
 
 
 class IssueSeverity(str, Enum):
@@ -38,7 +40,11 @@ class ValidationIssue:
 
 @dataclass(slots=True)
 class ValidationReport:
-    """Collection of validation issues along with derived summary flags."""
+    """Collection of validation issues along with derived summary flags.
+
+    Cached aggregates are stored internally but every public accessor returns
+    copy-on-read data so callers cannot mutate the cached state accidentally.
+    """
 
     issues: list[ValidationIssue] = field(default_factory=list)
     _severity_counts: Counter[IssueSeverity] = field(init=False, repr=False)
@@ -243,7 +249,7 @@ class ValidationReport:
         self._severity_variable_cache[severity] = computed
         return computed
 
-    def top_variables(self, limit: int | None = None) -> list[tuple[str, int]]:
+    def top_variables(self, limit: int | None = None) -> Sequence[tuple[str, int]]:
         if self._top_variables_cache is None:
             self._top_variables_cache = tuple(
                 sorted(
@@ -429,7 +435,11 @@ class DiffEntry:
 
 @dataclass(slots=True)
 class DiffReport:
-    """Summarizes differences between two environment snapshots."""
+    """Summarizes differences between two environment snapshots.
+
+    Public accessors expose copy-on-read sequences/mappings while memoizing the
+    underlying tuples for repeated CLI rendering.
+    """
 
     entries: list[DiffEntry] = field(default_factory=list)
     _counts: Counter[DiffKind] = field(init=False, repr=False)
@@ -573,7 +583,7 @@ class DiffReport:
     def has_variable(self, variable: str) -> bool:
         return variable in self._variable_counts
 
-    def top_variables(self, limit: int | None = None) -> list[tuple[str, int]]:
+    def top_variables(self, limit: int | None = None) -> Sequence[tuple[str, int]]:
         if self._top_variables_cache is None:
             self._top_variables_cache = tuple(
                 sorted(

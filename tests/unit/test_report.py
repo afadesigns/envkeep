@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from envkeep.report import (
     DiffEntry,
     DiffKind,
@@ -319,3 +321,28 @@ def test_diff_report_views_are_copy_on_read() -> None:
         DiffEntry(variable="NEW", kind=DiffKind.EXTRA, left=None, right="2", secret=False)
     )
     assert all(entry.variable != "NEW" for entry in report.entries_by_kind(DiffKind.EXTRA))
+
+
+def test_counts_by_code_is_read_only() -> None:
+    report = ValidationReport(
+        issues=[
+            ValidationIssue(variable="A", message="boom", severity=IssueSeverity.ERROR, code="missing"),
+            ValidationIssue(variable="B", message="warn", severity=IssueSeverity.WARNING, code="extra"),
+        ]
+    )
+    mapping = report.counts_by_code()
+    assert mapping["extra"] == 1
+    with pytest.raises(TypeError):
+        mapping["extra"] = 5  # type: ignore[assignment]
+
+
+def test_counts_by_kind_is_read_only() -> None:
+    report = DiffReport(
+        entries=[
+            DiffEntry(variable="A", kind=DiffKind.EXTRA, left=None, right="1", secret=False),
+        ]
+    )
+    mapping = report.counts_by_kind()
+    assert mapping[DiffKind.EXTRA.value] == 1
+    with pytest.raises(TypeError):
+        mapping[DiffKind.EXTRA.value] = 0  # type: ignore[assignment]
