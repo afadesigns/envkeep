@@ -14,6 +14,7 @@ from ._compat import tomllib
 
 from .report import DiffEntry, DiffKind, DiffReport, IssueSeverity, ValidationIssue, ValidationReport
 from .snapshot import EnvSnapshot
+from .utils import casefold_sorted
 
 
 def _assert_unique(values: Iterable[str], *, entity: str) -> None:
@@ -240,17 +241,17 @@ class EnvSpec:
                     )
                 )
         if not allow_extra:
-            for key in snapshot.keys():
-                if key not in variables:
-                    report.add(
-                        ValidationIssue(
-                            variable=key,
-                            message="variable not declared in spec",
-                            severity=IssueSeverity.WARNING,
-                            code="extra",
-                            hint="Add it to envkeep.toml or remove it from the environment.",
-                        )
+            extras = [key for key in snapshot.keys() if key not in variables]
+            for key in casefold_sorted(extras):
+                report.add(
+                    ValidationIssue(
+                        variable=key,
+                        message="variable not declared in spec",
+                        severity=IssueSeverity.WARNING,
+                        code="extra",
+                        hint="Add it to envkeep.toml or remove it from the environment.",
                     )
+                )
         for key in snapshot.duplicate_keys():
             report.add(
                 ValidationIssue(
@@ -307,9 +308,9 @@ class EnvSpec:
                 )
         left_extra = set(left.keys()) - variables.keys()
         right_extra = set(right.keys()) - variables.keys()
-        for key in sorted(left_extra):
+        for key in casefold_sorted(left_extra):
             report.add(DiffEntry(variable=key, kind=DiffKind.MISSING, left=left.get(key), right=None, secret=False))
-        for key in sorted(right_extra):
+        for key in casefold_sorted(right_extra):
             report.add(DiffEntry(variable=key, kind=DiffKind.EXTRA, left=None, right=right.get(key), secret=False))
         return report
 

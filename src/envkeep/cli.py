@@ -120,6 +120,28 @@ def _resolve_profile_path(raw: str, *, base_dir: Path) -> Path:
     if raw == "-" or candidate.is_absolute():
         return candidate
     return (base_dir / candidate).resolve()
+
+
+def _read_spec_input(spec: Path) -> tuple[str, str | None]:
+    """Return the spec path string plus stdin contents when ``spec`` is ``-``."""
+
+    spec_path = str(spec)
+    if spec_path == "-":
+        return spec_path, sys.stdin.read()
+    return spec_path, None
+
+
+def _resolve_profile_base_dir(profile_base: Path | None, *, default_base: Path) -> Path:
+    """Validate and resolve the profile base directory for doctor/inspect commands."""
+
+    if profile_base is None:
+        return default_base
+    candidate = profile_base.expanduser()
+    if not candidate.exists():
+        raise typer.BadParameter(f"profile base '{candidate}' does not exist")
+    if not candidate.is_dir():
+        raise typer.BadParameter(f"profile base '{candidate}' is not a directory")
+    return candidate.resolve()
 def _usage_error(message: str) -> None:
     """Emit a usage error to stderr and exit with the conventional code."""
 
@@ -357,9 +379,7 @@ def check(
     spec_path = str(spec)
     if spec_path == "-" and env_path == "-":
         _usage_error("cannot read both spec and environment from stdin")
-    stdin_spec: str | None = None
-    if spec_path == "-":
-        stdin_spec = sys.stdin.read()
+    _, stdin_spec = _read_spec_input(spec)
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     if env_path == "-":
         data = sys.stdin.read()
@@ -398,9 +418,7 @@ def diff(
     minus_count = sum(1 for candidate in (str(first), str(second)) if candidate == "-")
     if spec_path == "-" and minus_count:
         _usage_error("cannot combine spec from stdin with environment stdin input")
-    stdin_spec: str | None = None
-    if spec_path == "-":
-        stdin_spec = sys.stdin.read()
+    _, stdin_spec = _read_spec_input(spec)
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     stdin_buffer: str | None = None
     if minus_count > 1:
@@ -442,10 +460,7 @@ def generate(
 ) -> None:
     """Generate a sanitized .env example from the spec."""
 
-    spec_path = str(spec)
-    stdin_spec: str | None = None
-    if spec_path == "-":
-        stdin_spec = sys.stdin.read()
+    _, stdin_spec = _read_spec_input(spec)
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     content = env_spec.generate_example(redact_secrets=not no_redact_secrets)
     if output:
@@ -464,24 +479,10 @@ def inspect(
 ) -> None:
     """Print a summary of variables and profiles declared in the spec."""
 
-    profile_base = resolve_optional_path_option(profile_base)
-    spec_path = str(spec)
-    stdin_spec: str | None = None
-    if spec_path == "-":
-        stdin_spec = sys.stdin.read()
+    profile_base_path = resolve_optional_path_option(profile_base)
+    _, stdin_spec = _read_spec_input(spec)
     spec_base = _spec_base_dir(spec)
-    profile_base_dir = spec_base
-    if profile_base is not None:
-        candidate_base = profile_base.expanduser()
-        if not candidate_base.exists():
-            raise typer.BadParameter(
-                f"profile base '{candidate_base}' does not exist"
-            )
-        if not candidate_base.is_dir():
-            raise typer.BadParameter(
-                f"profile base '{candidate_base}' is not a directory"
-            )
-        profile_base_dir = candidate_base.resolve()
+    profile_base_dir = _resolve_profile_base_dir(profile_base_path, default_base=spec_base)
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     fmt = _coerce_output_format(output_format)
     if fmt is OutputFormat.JSON:
@@ -587,24 +588,10 @@ def doctor(
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
-    profile_base = resolve_optional_path_option(profile_base)
-    spec_path = str(spec)
-    stdin_spec: str | None = None
-    if spec_path == "-":
-        stdin_spec = sys.stdin.read()
+    profile_base_path = resolve_optional_path_option(profile_base)
+    _, stdin_spec = _read_spec_input(spec)
     spec_base = _spec_base_dir(spec)
-    profile_base_dir = spec_base
-    if profile_base is not None:
-        candidate_base = profile_base.expanduser()
-        if not candidate_base.exists():
-            raise typer.BadParameter(
-                f"profile base '{candidate_base}' does not exist"
-            )
-        if not candidate_base.is_dir():
-            raise typer.BadParameter(
-                f"profile base '{candidate_base}' is not a directory"
-            )
-        profile_base_dir = candidate_base.resolve()
+    profile_base_dir = _resolve_profile_base_dir(profile_base_path, default_base=spec_base)
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     profiles = list(env_spec.iter_profiles())
     if not profiles:

@@ -60,6 +60,29 @@ def test_diff_detects_changes(tmp_path: Path) -> None:
     assert DiffKind.CHANGED in kinds
 
 
+def test_diff_orders_extra_variables_case_insensitive() -> None:
+    spec = EnvSpec.from_dict({"version": 1, "variables": []})
+    left_snapshot = EnvSnapshot.from_text(
+        "\n".join([
+            "beta=1",
+            "Alpha=1",
+        ]),
+        source="left",
+    )
+    right_snapshot = EnvSnapshot.from_text(
+        "\n".join([
+            "Gamma=1",
+            "alpha=1",
+        ]),
+        source="right",
+    )
+    diff = spec.diff(left_snapshot, right_snapshot)
+    missing = [entry.variable for entry in diff.entries_by_kind(DiffKind.MISSING)]
+    extra = [entry.variable for entry in diff.entries_by_kind(DiffKind.EXTRA)]
+    assert missing == ["Alpha", "beta"]
+    assert extra == ["alpha", "Gamma"]
+
+
 def test_validate_allows_extra_when_requested(tmp_path: Path) -> None:
     spec = EnvSpec.from_file(EXAMPLE_SPEC)
     env_file = tmp_path / "extra.env"

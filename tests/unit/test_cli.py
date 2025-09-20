@@ -436,6 +436,74 @@ def test_cli_doctor_json_warnings(tmp_path: Path) -> None:
     assert aggregated["invalid_lines"][0]["line"].startswith("line")
 
 
+def test_cli_doctor_json_invalid_lines_sorted(tmp_path: Path) -> None:
+    base_dir = tmp_path / "profiles"
+    env_dir = base_dir / "env"
+    env_dir.mkdir(parents=True)
+    first_env = env_dir / "first.env"
+    first_env.write_text(
+        "\n".join(
+            [
+                "# comment",
+                "BROKEN",
+                "FOO=value",
+                "BAR=value",
+                "BADLINE",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    second_env = env_dir / "second.env"
+    second_env.write_text(
+        "\n".join(
+            [
+                "FOO=value",
+                "BAR=value",
+                "INVALID",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    spec_text = textwrap.dedent(
+        """
+        version = 1
+
+        [[variables]]
+        name = "FOO"
+
+        [[variables]]
+        name = "BAR"
+
+        [[profiles]]
+        name = "second"
+        env_file = "env/second.env"
+
+        [[profiles]]
+        name = "first"
+        env_file = "env/first.env"
+        """
+    )
+    spec_file = base_dir / "envkeep.toml"
+    spec_file.write_text(spec_text, encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "doctor",
+            "--spec",
+            str(spec_file),
+            "--format",
+            "json",
+            "--profile-base",
+            str(base_dir),
+        ],
+    )
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    invalid_lines = payload["warnings"]["invalid_lines"]
+    assert [entry["profile"] for entry in invalid_lines] == ["first", "first", "second"]
+    assert [entry["line"] for entry in invalid_lines] == ["line 2", "line 5", "line 3"]
+
+
 def test_cli_doctor_json_summary_top_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     env_file = tmp_path / "warn.env"
     env_file.write_text(
