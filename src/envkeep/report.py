@@ -47,6 +47,7 @@ class ValidationReport:
     _code_buckets: dict[str, list[ValidationIssue]] = field(init=False, repr=False)
     _variable_buckets: dict[str, list[ValidationIssue]] = field(init=False, repr=False)
     _severity_variables: dict[IssueSeverity, set[str]] = field(init=False, repr=False)
+    _severity_variable_cache: dict[IssueSeverity, tuple[str, ...]] = field(init=False, repr=False)
     _top_variables_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
     _most_common_codes_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
     _issue_sort_key = staticmethod(
@@ -67,6 +68,7 @@ class ValidationReport:
         self._variable_counts = Counter()
         self._variable_buckets = {}
         self._severity_variables = {severity: set() for severity in IssueSeverity}
+        self._severity_variable_cache = {}
         self._top_variables_cache = None
         self._most_common_codes_cache = None
         if self.issues:
@@ -120,6 +122,7 @@ class ValidationReport:
         self._code_buckets.setdefault(issue.code, []).append(issue)
         self._variable_buckets.setdefault(issue.variable, []).append(issue)
         self._severity_variables[issue.severity].add(issue.variable)
+        self._severity_variable_cache.pop(issue.severity, None)
         self._top_variables_cache = None
         self._most_common_codes_cache = None
 
@@ -179,14 +182,22 @@ class ValidationReport:
 
     def variables_by_severity(self) -> dict[str, list[str]]:
         return {
-            severity.value: [
-                *sorted(
-                    self._severity_variables[severity],
-                    key=lambda name: (name.casefold(), name),
-                )
-            ]
+            severity.value: list(self._variables_for_severity(severity))
             for severity in IssueSeverity
         }
+
+    def _variables_for_severity(self, severity: IssueSeverity) -> tuple[str, ...]:
+        cached = self._severity_variable_cache.get(severity)
+        if cached is not None:
+            return cached
+        computed = tuple(
+            sorted(
+                self._severity_variables[severity],
+                key=lambda name: (name.casefold(), name),
+            )
+        )
+        self._severity_variable_cache[severity] = computed
+        return computed
 
     def top_variables(self, limit: int | None = None) -> list[tuple[str, int]]:
         if self._top_variables_cache is None:
@@ -257,6 +268,38 @@ class ValidationReport:
         if not bucket:
             return []
         return [*sorted(bucket, key=self._issue_sort_key)]
+
+    @staticmethod
+    def _casefold_sorted(values: Iterable[str]) -> list[str]:
+        return sorted(set(values), key=lambda item: (item.casefold(), item))
+
+    @staticmethod
+    def _invalid_line_sort_key(value: str) -> tuple[int, str]:
+        digits = "".join(char for char in value if char.isdigit())
+        number = int(digits) if digits else 0
+        return number, value
+
+    def warning_summary(self) -> dict[str, Any]:
+        duplicates = self._casefold_sorted(
+            issue.variable for issue in self.issues_by_code("duplicate")
+        )
+        extras = self._casefold_sorted(
+            issue.variable for issue in self.issues_by_code("extra")
+        )
+        invalid_lines = [
+            {
+                "line": issue.variable,
+                "hint": issue.hint or issue.message,
+            }
+            for issue in self.issues_by_code("invalid_line")
+        ]
+        invalid_lines.sort(key=lambda item: self._invalid_line_sort_key(item["line"]))
+        return {
+            "total": self.warning_count,
+            "duplicates": duplicates,
+            "extra_variables": extras,
+            "invalid_lines": invalid_lines,
+        }
 
 
 class DiffKind(str, Enum):

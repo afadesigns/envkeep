@@ -212,32 +212,6 @@ def _format_diff_summary(report: DiffReport, *, top_limit: int | None) -> str:
     return " · ".join(parts)
 
 
-def _inject_extra_warnings(
-    report: ValidationReport,
-    snapshot: EnvSnapshot,
-    env_spec: EnvSpec,
-    *,
-    allow_extra: bool,
-) -> None:
-    if allow_extra:
-        return
-    if any(issue.code == "extra" for issue in report.issues):
-        return
-    variable_names = env_spec.variable_map().keys()
-    for key in snapshot.keys():
-        if key in variable_names:
-            continue
-        report.add(
-            ValidationIssue(
-                variable=key,
-                message="variable not declared in spec",
-                severity=IssueSeverity.WARNING,
-                code="extra",
-                hint="Add it to envkeep.toml or remove it from the environment.",
-            )
-        )
-
-
 def _emit_doctor_json(
     results: list[dict[str, Any]],
     *,
@@ -373,6 +347,8 @@ def check(
 ) -> None:
     """Validate an environment against the specification."""
 
+    if summary_top < 0:
+        _usage_error("summary limit must be non-negative")
     env_path = str(env_file)
     spec_path = str(spec)
     if spec_path == "-" and env_path == "-":
@@ -387,7 +363,6 @@ def check(
     else:
         snapshot = EnvSnapshot.from_env_file(env_file)
     report = env_spec.validate(snapshot, allow_extra=allow_extra)
-    _inject_extra_warnings(report, snapshot, env_spec, allow_extra=allow_extra)
     fmt = _coerce_output_format(output_format)
     exit_code = _handle_validation_output(
         report,
@@ -413,6 +388,8 @@ def diff(
 ) -> None:
     """Compare two environment files using the spec for normalization."""
 
+    if summary_top < 0:
+        _usage_error("summary limit must be non-negative")
     spec_path = str(spec)
     minus_count = sum(1 for candidate in (str(first), str(second)) if candidate == "-")
     if spec_path == "-" and minus_count:
@@ -571,6 +548,8 @@ def doctor(
 ) -> None:
     """Validate one or more profiles declared in the spec."""
 
+    if summary_top < 0:
+        _usage_error("summary limit must be non-negative")
     env_spec = load_spec(spec)
     profiles = list(env_spec.iter_profiles())
     if not profiles:
@@ -621,13 +600,12 @@ def doctor(
             continue
         snapshot = EnvSnapshot.from_env_file(env_path)
         report = env_spec.validate(snapshot, allow_extra=allow_extra)
-        _inject_extra_warnings(report, snapshot, env_spec, allow_extra=allow_extra)
         checked_profiles += 1
         severity_totals = report.severity_totals()
         total_errors += severity_totals[IssueSeverity.ERROR.value]
         total_warnings += severity_totals[IssueSeverity.WARNING.value]
         total_info += severity_totals[IssueSeverity.INFO.value]
-        warnings_summary = _summarize_warnings(report)
+        warnings_summary = report.warning_summary()
         aggregate_warning_counts["duplicates"] += len(warnings_summary["duplicates"])
         aggregate_warning_counts["extra_variables"] += len(warnings_summary["extra_variables"])
         aggregate_warning_counts["invalid_lines"] += len(warnings_summary["invalid_lines"])
@@ -694,49 +672,24 @@ def doctor(
         )
         if aggregate_issue_variables and top_limit != 0:
             sorted_variables = _casefold_sorted(aggregate_issue_variables)
+            display_count = min(len(sorted_variables), top_limit)
             console.print(
                 "Impacted variables: "
-                + ", ".join(sorted_variables[:top_limit])
+                + ", ".join(sorted_variables[:display_count])
             )
         if aggregated_most_common_codes:
             formatted_codes = ", ".join(
                 f"{code}({count})"
-                for code, count in aggregated_most_common_codes[:5]
+                for code, count in aggregated_most_common_codes
             )
             console.print(f"Top issue codes: {formatted_codes}")
         if aggregated_top_variables and top_limit != 0:
             formatted_variables = ", ".join(
                 f"{variable}({count})"
-                for variable, count in aggregated_top_variables[:5]
+                for variable, count in aggregated_top_variables
             )
             console.print(f"Top impacted variables: {formatted_variables}")
     raise typer.Exit(code=exit_code)
-
-
-def _summarize_warnings(report: ValidationReport) -> dict[str, Any]:
-    duplicates = _casefold_sorted({issue.variable for issue in report.issues_by_code("duplicate")})
-    extras = _casefold_sorted({issue.variable for issue in report.issues_by_code("extra")})
-
-    def _line_payload(issue: ValidationIssue) -> dict[str, Any]:
-        return {"line": issue.variable, "hint": issue.hint or issue.message}
-
-    def _line_key(value: str) -> tuple[int, str]:
-        digits = "".join(char for char in value if char.isdigit())
-        number = int(digits) if digits else 0
-        return number, value
-
-    invalid_lines = [
-        _line_payload(issue)
-        for issue in report.issues_by_code("invalid_line")
-    ]
-    invalid_lines.sort(key=lambda item: _line_key(item["line"]))
-    return {
-        "total": report.warning_count,
-        "duplicates": duplicates,
-        "extra_variables": extras,
-        "invalid_lines": invalid_lines,
-    }
-
 
 def render_validation_report(
     report: ValidationReport,

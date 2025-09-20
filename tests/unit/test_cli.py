@@ -48,6 +48,25 @@ def test_cli_check_json_summary() -> None:
     assert payload["summary"]["severity_totals"]["warning"] == 0
 
 
+def test_cli_check_rejects_negative_summary_top(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(DEV_ENV.read_text(), encoding="utf-8")
+    with pytest.raises(typer.Exit) as excinfo:
+        cli_check(
+            env_file=env_file,
+            spec=EXAMPLE_SPEC,
+            output_format="text",
+            allow_extra=False,
+            fail_on_warnings=False,
+            summary_top=-1,
+        )
+    assert excinfo.value.exit_code == 2
+    captured = capsys.readouterr()
+    assert "summary limit must be non-negative" in captured.err
+
+
 def test_cli_rejects_unknown_format(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(DEV_ENV.read_text(), encoding="utf-8")

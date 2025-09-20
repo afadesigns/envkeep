@@ -227,3 +227,57 @@ def test_validation_report_most_common_codes_limit() -> None:
         )
     )
     assert report.most_common_codes(limit=1) == [("extra", 3)]
+
+
+def test_validation_report_warning_summary_orders_entries() -> None:
+    report = ValidationReport()
+    report.extend(
+        [
+            ValidationIssue(
+                variable="beta",
+                message="unexpected variable",
+                severity=IssueSeverity.WARNING,
+                code="extra",
+            ),
+            ValidationIssue(
+                variable="ALPHA",
+                message="unexpected variable",
+                severity=IssueSeverity.WARNING,
+                code="extra",
+            ),
+            ValidationIssue(
+                variable="zeta",
+                message="duplicate declaration",
+                severity=IssueSeverity.WARNING,
+                code="duplicate",
+            ),
+            ValidationIssue(
+                variable="Alpha",
+                message="duplicate declaration",
+                severity=IssueSeverity.WARNING,
+                code="duplicate",
+            ),
+            ValidationIssue(
+                variable="line 10",
+                message="line could not be parsed",
+                severity=IssueSeverity.WARNING,
+                code="invalid_line",
+                hint="check spacing",
+            ),
+            ValidationIssue(
+                variable="line 2",
+                message="line could not be parsed",
+                severity=IssueSeverity.WARNING,
+                code="invalid_line",
+                hint="missing equals",
+            ),
+        ]
+    )
+    summary = report.warning_summary()
+    assert summary["total"] == report.warning_count == 6
+    assert summary["extra_variables"] == ["ALPHA", "beta"]
+    assert summary["duplicates"] == ["Alpha", "zeta"]
+    assert summary["invalid_lines"] == [
+        {"line": "line 2", "hint": "missing equals"},
+        {"line": "line 10", "hint": "check spacing"},
+    ]
