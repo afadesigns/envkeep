@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ runner = CliRunner()
 EXAMPLE_SPEC = Path("examples/basic/envkeep.toml")
 DEV_ENV = Path("examples/basic/.env.dev")
 PROD_ENV = Path("examples/basic/.env.prod")
+PROD_ENV_ABS = PROD_ENV.resolve()
 def test_cli_check_success() -> None:
     result = runner.invoke(app, ["check", str(DEV_ENV), "--spec", str(EXAMPLE_SPEC)])
     assert result.exit_code == 0
@@ -160,6 +162,45 @@ def test_cli_generate_no_redact_secrets() -> None:
     assert "API_TOKEN=***" not in result.stdout
 
 
+def test_cli_doctor_resolves_relative_profiles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec_dir = tmp_path / "spec"
+    env_dir = tmp_path / "env"
+    home_dir = tmp_path / "home"
+    spec_dir.mkdir()
+    env_dir.mkdir()
+    home_dir.mkdir()
+    env_file = env_dir / "app.env"
+    env_file.write_text("FOO=value\n", encoding="utf-8")
+    home_env = home_dir / "home.env"
+    home_env.write_text("FOO=value\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home_dir))
+    spec_file = spec_dir / "envkeep.toml"
+    spec_file.write_text(
+        textwrap.dedent(
+            """
+            version = 1
+
+            [[variables]]
+            name = "FOO"
+
+            [[profiles]]
+            name = "app"
+            env_file = "../env/app.env"
+
+            [[profiles]]
+            name = "app-home"
+            env_file = "~/home.env"
+            """
+        ),
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["doctor", "--spec", str(spec_file)])
+    assert result.exit_code == 0
+    assert "All checks passed" in result.stdout
+
+
 def test_cli_generate_writes_nested_path(tmp_path: Path) -> None:
     target = tmp_path / "nested" / "example.env"
     result = runner.invoke(
@@ -238,7 +279,11 @@ def test_cli_doctor_fail_on_warnings(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    spec_text = EXAMPLE_SPEC.read_text().replace("examples/basic/.env.dev", str(env_file))
+    spec_text = (
+        EXAMPLE_SPEC.read_text()
+        .replace("examples/basic/.env.dev", str(env_file))
+        .replace("examples/basic/.env.prod", str(PROD_ENV_ABS))
+    )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
     result = runner.invoke(
@@ -290,7 +335,11 @@ def test_cli_doctor_json_warnings(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    spec_text = EXAMPLE_SPEC.read_text().replace("examples/basic/.env.dev", str(env_file))
+    spec_text = (
+        EXAMPLE_SPEC.read_text()
+        .replace("examples/basic/.env.dev", str(env_file))
+        .replace("examples/basic/.env.prod", str(PROD_ENV_ABS))
+    )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
     result = runner.invoke(
@@ -351,7 +400,11 @@ def test_cli_doctor_json_summary_top_zero(tmp_path: Path, capsys: pytest.Capture
         ),
         encoding="utf-8",
     )
-    spec_text = EXAMPLE_SPEC.read_text().replace("examples/basic/.env.dev", str(env_file))
+    spec_text = (
+        EXAMPLE_SPEC.read_text()
+        .replace("examples/basic/.env.dev", str(env_file))
+        .replace("examples/basic/.env.prod", str(PROD_ENV_ABS))
+    )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
     with pytest.raises(typer.Exit) as excinfo:
@@ -490,7 +543,11 @@ def test_cli_doctor_text_highlights_impacted_variables(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    spec_text = EXAMPLE_SPEC.read_text().replace("examples/basic/.env.dev", str(env_file))
+    spec_text = (
+        EXAMPLE_SPEC.read_text()
+        .replace("examples/basic/.env.dev", str(env_file))
+        .replace("examples/basic/.env.prod", str(PROD_ENV_ABS))
+    )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
     result = runner.invoke(app, ["doctor", "--spec", str(spec_copy)])

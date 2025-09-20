@@ -94,6 +94,15 @@ def _emit_json(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2))
 
 
+def _resolve_profile_path(raw: str, *, base_dir: Path) -> Path:
+    """Return an absolute profile path, honoring relative and user-expanded inputs."""
+
+    candidate = Path(raw).expanduser()
+    if raw == "-" or candidate.is_absolute():
+        return candidate
+    return (base_dir / candidate).resolve()
+
+
 def _casefold_sorted(values: Iterable[str]) -> list[str]:
     return sorted(values, key=lambda name: (name.casefold(), name))
 
@@ -541,6 +550,8 @@ def doctor(
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
+    spec_path_str = str(spec)
+    spec_base = spec.parent.resolve() if spec_path_str != "-" else Path.cwd()
     env_spec = load_spec(spec)
     profiles = list(env_spec.iter_profiles())
     if not profiles:
@@ -549,13 +560,18 @@ def doctor(
 
     selected: list[tuple[str, Path]] = []
     if profile == "all":
-        selected = [(item.name, Path(item.env_file)) for item in profiles]
+        selected = [
+            (item.name, _resolve_profile_path(item.env_file, base_dir=spec_base))
+            for item in profiles
+        ]
     else:
         mapping = env_spec.profiles_by_name()
         if profile not in mapping:
             raise typer.BadParameter(f"profile '{profile}' not found")
         item = mapping[profile]
-        selected = [(item.name, Path(item.env_file))]
+        selected = [
+            (item.name, _resolve_profile_path(item.env_file, base_dir=spec_base))
+        ]
 
     exit_code = 0
     fmt = _coerce_output_format(output_format)

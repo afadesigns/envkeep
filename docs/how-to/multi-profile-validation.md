@@ -1,0 +1,38 @@
+---
+title: Validate Multi-profile Environments
+---
+
+# Validate Multi-profile Environments
+
+Run Envkeep's doctor workflow against several environment files at once to ensure they stay in sync with the specification.
+
+## Use the Socialsense sample spec
+
+The repository ships a multi-profile example at `examples/socialsense/envkeep.toml`. The spec declares multiple profiles whose `env_file` entries point to sibling checkouts using relative paths.
+
+```bash
+uv run envkeep doctor --spec examples/socialsense/envkeep.toml
+```
+
+Envkeep resolves every profile path relative to the spec directory and expands user home markers such as `~/service.env`. This means a spec can live inside a mono-repo while pointing at environment files tracked elsewhere (for example, under `.github/env/`).
+
+## Target specific profiles
+
+Limit validation to one profile when you only need to audit a subset.
+
+```bash
+uv run envkeep doctor --spec examples/socialsense/envkeep.toml --profile database
+```
+
+Combine the `--profile` flag with `--fail-on-warnings` to fail CI on duplicate variables, invalid lines, or missing entries even when there are no hard errors.
+
+## Capture machine-readable reports
+
+For automated pipelines, switch to JSON output and consume the per-profile summary payload.
+
+```bash
+uv run envkeep doctor --spec examples/socialsense/envkeep.toml --format json \
+  | jq '.summary, .profiles[] | {profile, path, has_errors: .summary.is_success | not}'
+```
+
+The aggregated summary mirrors `envkeep check`, providing severity totals, affected variables, and top offenders for dashboards or alerting systems. Because paths are normalized before validation, downstream tooling receives absolute locations regardless of how the spec references the profiles.

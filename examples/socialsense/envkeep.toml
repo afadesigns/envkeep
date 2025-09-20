@@ -1,0 +1,63 @@
+version = 1
+
+[metadata]
+name = "Socialsense Local Development"
+description = "Validates Socialsense service env files used on the workstation."
+
+[[variables]]
+name = "DATABASE_URL"
+type = "url"
+secret = true
+required = true
+description = "Async application database connection string"
+
+[[variables]]
+name = "DATABASE_SUPER_URL"
+type = "url"
+secret = true
+required = true
+description = "Synchronous superuser database connection string"
+
+[[variables]]
+name = "REDIS_URL"
+type = "url"
+required = true
+description = "Redis cache endpoint"
+
+[[variables]]
+name = "OTEL_SDK_DISABLED"
+type = "bool"
+required = false
+default = true
+description = "Disable OpenTelemetry while running tests"
+
+[[variables]]
+name = "DASHBOARD_DISABLED"
+type = "bool"
+required = false
+default = true
+description = "Disable dashboards during CI runs"
+
+[[variables]]
+name = "ENVIRONMENT"
+type = "string"
+required = true
+choices = ["development", "test", "production"]
+description = "Deployment environment identifier"
+
+[[variables]]
+name = "FAST_TEST"
+type = "bool"
+required = false
+default = false
+description = "Toggle fast-test shortcuts"
+
+[[profiles]]
+name = "database"
+env_file = "../../../socialsense/.github/env/db.env"
+description = "Database connectivity variables"
+
+[[profiles]]
+name = "integration-tests"
+env_file = "../../../socialsense/.github/env/test.env"
+description = "Test harness toggles"
