@@ -244,11 +244,11 @@ def _emit_doctor_json(
             aggregated_duplicates.update(warnings.get("duplicates", ()))
             aggregated_extras.update(warnings.get("extra_variables", ()))
             profile = item.get("profile")
-            for warning in warnings.get("invalid_lines", ()):
-                payload = dict(warning)
-                if profile is not None:
-                    payload.setdefault("profile", profile)
-                aggregated_invalid_lines.append(payload)
+            for warning in warnings.get("invalid_lines", ()):  # already copy-on-read
+                if profile is None:
+                    aggregated_invalid_lines.append(warning)
+                else:
+                    aggregated_invalid_lines.append({**warning, "profile": profile})
     non_empty_severities = [
         key
         for key, value in severity_totals.items()
