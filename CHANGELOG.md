@@ -6,12 +6,16 @@ All notable changes to Envkeep will be documented here.
 ### Added
 - Allowed specs to be streamed from stdin across CLI commands via `--spec -` with guardrails against duplicate stdin consumption.
 - Added JSON output for `envkeep inspect` so automation can consume variable and profile metadata.
+- Added `--profile-base` to `envkeep doctor` for overriding the directory used to resolve relative profile paths, especially when specs are streamed from stdin.
+- Bundled runnable Socialsense `.env` fixtures under `examples/socialsense/env/` to demonstrate multi-profile validation without extra checkouts.
+- Extended `envkeep inspect --format json` profile entries with a `resolved_env_file` field that exposes the absolute path Envkeep validated.
 
 ### Changed
 - Hardened `.env` parsing to preserve escaped `#` characters, honour embedded quotes, and surface unterminated strings as validation warnings.
 - Centralized CLI output formatting with strict format validation and clearer TOML parse diagnostics.
 - Shielded specification caches behind read-only views to prevent accidental mutation between validations.
 - Updated project branding and metadata for Andreas Fahl / afadesigns ahead of the public repository launch.
+- Relative profile `env_file` values now resolve against the spec directory by default; use `--profile-base` when a different root is required.
 
 ### Documentation
 - Clarified how to escape `#` characters and quotes in `.env` files within the getting started guide.

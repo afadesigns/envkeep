@@ -56,14 +56,14 @@ Tune the summary footprint with `--summary-top`: raise it to see more impacted v
 
 Pipe specs directly from tooling with `--spec -` (for example, `cat envkeep.toml | envkeep check .env --spec -`) and explore metadata via `envkeep inspect --format json` when automating reviews.
 
-See [`examples/basic`](examples/basic) for a complete spec and environment pair.
+See [`examples/basic`](examples/basic) for a complete spec and environment pair and [`examples/socialsense`](examples/socialsense) for a multi-profile demo with bundled `.env` fixtures.
 
 ## Features
 - Typed spec parsing with validation for defaults, patterns, and enumerated values.
 - Human-friendly and machine-readable reports (`--format text|json`).
 - Rich inspection tooling to summarize variables and profiles (`envkeep inspect`, JSON-ready output).
 - Secrets-aware diffing that redacts sensitive values.
-- Profiles support for multi-stage environments validated via `envkeep doctor`.
+- Profiles support for multi-stage environments validated via `envkeep doctor`; relative profile paths resolve against the spec (override with `--profile-base`).
 - Configurable summaries that bound the "top variables" lists via `--summary-top` in `check`, `diff`, and `doctor`.
 - MkDocs-powered documentation with mkdocstrings API reference.
 - First-class CI workflows for linting, typing, testing, docs, and release automation.

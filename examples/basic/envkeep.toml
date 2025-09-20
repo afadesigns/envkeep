@@ -32,10 +32,10 @@ pattern = "^[A-Z0-9]{32}$"
 
 [[profiles]]
 name = "development"
-env_file = "examples/basic/.env.dev"
+env_file = ".env.dev"
 description = "Developer workstation"
 
 [[profiles]]
 name = "production"
-env_file = "examples/basic/.env.prod"
+env_file = ".env.prod"
 description = "Production deployment"

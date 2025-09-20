@@ -94,6 +94,12 @@ def _emit_json(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2))
 
 
+def _spec_base_dir(spec: Path) -> Path:
+    """Return the directory used as the reference point for spec-relative paths."""
+
+    return spec.parent.resolve() if str(spec) != "-" else Path.cwd()
+
+
 def _resolve_profile_path(raw: str, *, base_dir: Path) -> Path:
     """Return an absolute profile path, honoring relative and user-expanded inputs."""
 
@@ -460,6 +466,7 @@ def inspect(
 ) -> None:
     """Print a summary of variables and profiles declared in the spec."""
 
+    spec_base = _spec_base_dir(spec)
     env_spec = load_spec(spec)
     fmt = _coerce_output_format(output_format)
     if fmt is OutputFormat.JSON:
@@ -482,6 +489,9 @@ def inspect(
             {
                 "name": profile.name,
                 "env_file": profile.env_file,
+                "resolved_env_file": str(
+                    _resolve_profile_path(profile.env_file, base_dir=spec_base)
+                ),
                 "description": profile.description,
             }
             for profile in env_spec.profiles
@@ -545,13 +555,21 @@ def doctor(
         "--summary-top",
         help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
     ),
+    profile_base: Path | None = typer.Option(
+        None,
+        "--profile-base",
+        help="Override the base directory used to resolve relative profile env_file paths.",
+        exists=True,
+        file_okay=False,
+        resolve_path=True,
+    ),
 ) -> None:
     """Validate one or more profiles declared in the spec."""
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
-    spec_path_str = str(spec)
-    spec_base = spec.parent.resolve() if spec_path_str != "-" else Path.cwd()
+    spec_base = _spec_base_dir(spec)
+    profile_base_dir = profile_base or spec_base
     env_spec = load_spec(spec)
     profiles = list(env_spec.iter_profiles())
     if not profiles:
@@ -561,7 +579,7 @@ def doctor(
     selected: list[tuple[str, Path]] = []
     if profile == "all":
         selected = [
-            (item.name, _resolve_profile_path(item.env_file, base_dir=spec_base))
+            (item.name, _resolve_profile_path(item.env_file, base_dir=profile_base_dir))
             for item in profiles
         ]
     else:
@@ -570,7 +588,7 @@ def doctor(
             raise typer.BadParameter(f"profile '{profile}' not found")
         item = mapping[profile]
         selected = [
-            (item.name, _resolve_profile_path(item.env_file, base_dir=spec_base))
+            (item.name, _resolve_profile_path(item.env_file, base_dir=profile_base_dir))
         ]
 
     exit_code = 0

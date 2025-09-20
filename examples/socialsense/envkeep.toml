@@ -54,10 +54,10 @@ description = "Toggle fast-test shortcuts"
 
 [[profiles]]
 name = "database"
-env_file = "../../../socialsense/.github/env/db.env"
+env_file = "env/database.env"
 description = "Database connectivity variables"
 
 [[profiles]]
 name = "integration-tests"
-env_file = "../../../socialsense/.github/env/test.env"
+env_file = "env/integration-tests.env"
 description = "Test harness toggles"

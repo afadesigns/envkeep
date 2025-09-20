@@ -201,6 +201,39 @@ def test_cli_doctor_resolves_relative_profiles(
     assert "All checks passed" in result.stdout
 
 
+def test_cli_doctor_profile_base_override(tmp_path: Path) -> None:
+    profile_base = tmp_path / "profiles"
+    spec_text = textwrap.dedent(
+        """
+        version = 1
+
+        [[variables]]
+        name = "FOO"
+
+        [[profiles]]
+        name = "app"
+        env_file = "env/app.env"
+        """
+    )
+    env_dir = profile_base / "env"
+    env_dir.mkdir(parents=True)
+    env_file = env_dir / "app.env"
+    env_file.write_text("FOO=value\n", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "doctor",
+            "--spec",
+            "-",
+            "--profile-base",
+            str(profile_base),
+        ],
+        input=spec_text,
+    )
+    assert result.exit_code == 0
+    assert "All checks passed" in result.stdout
+
+
 def test_cli_generate_writes_nested_path(tmp_path: Path) -> None:
     target = tmp_path / "nested" / "example.env"
     result = runner.invoke(
@@ -226,8 +259,8 @@ def test_cli_doctor_all(tmp_path: Path) -> None:
     missing = tmp_path / "missing.env"
     spec_copy.write_text(
         spec_text
-        .replace("examples/basic/.env.dev", str(env_file))
-        .replace("examples/basic/.env.prod", str(missing)),
+        .replace(".env.dev", str(env_file))
+        .replace(".env.prod", str(missing)),
         encoding="utf-8",
     )
     result = runner.invoke(app, ["doctor", "--spec", str(spec_copy)])
@@ -240,8 +273,8 @@ def test_cli_doctor_json_output(tmp_path: Path) -> None:
     env_file.write_text(DEV_ENV.read_text(), encoding="utf-8")
     spec_text = (
         EXAMPLE_SPEC.read_text()
-        .replace("examples/basic/.env.dev", str(env_file))
-        .replace("examples/basic/.env.prod", str(env_file))
+        .replace(".env.dev", str(env_file))
+        .replace(".env.prod", str(env_file))
     )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
@@ -281,8 +314,8 @@ def test_cli_doctor_fail_on_warnings(tmp_path: Path) -> None:
     )
     spec_text = (
         EXAMPLE_SPEC.read_text()
-        .replace("examples/basic/.env.dev", str(env_file))
-        .replace("examples/basic/.env.prod", str(PROD_ENV_ABS))
+        .replace(".env.dev", str(env_file))
+        .replace(".env.prod", str(PROD_ENV_ABS))
     )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
@@ -337,8 +370,8 @@ def test_cli_doctor_json_warnings(tmp_path: Path) -> None:
     )
     spec_text = (
         EXAMPLE_SPEC.read_text()
-        .replace("examples/basic/.env.dev", str(env_file))
-        .replace("examples/basic/.env.prod", str(PROD_ENV_ABS))
+        .replace(".env.dev", str(env_file))
+        .replace(".env.prod", str(PROD_ENV_ABS))
     )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
@@ -402,8 +435,8 @@ def test_cli_doctor_json_summary_top_zero(tmp_path: Path, capsys: pytest.Capture
     )
     spec_text = (
         EXAMPLE_SPEC.read_text()
-        .replace("examples/basic/.env.dev", str(env_file))
-        .replace("examples/basic/.env.prod", str(PROD_ENV_ABS))
+        .replace(".env.dev", str(env_file))
+        .replace(".env.prod", str(PROD_ENV_ABS))
     )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
@@ -545,8 +578,8 @@ def test_cli_doctor_text_highlights_impacted_variables(tmp_path: Path) -> None:
     )
     spec_text = (
         EXAMPLE_SPEC.read_text()
-        .replace("examples/basic/.env.dev", str(env_file))
-        .replace("examples/basic/.env.prod", str(PROD_ENV_ABS))
+        .replace(".env.dev", str(env_file))
+        .replace(".env.prod", str(PROD_ENV_ABS))
     )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
@@ -561,8 +594,8 @@ def test_cli_doctor_reports_summary(tmp_path: Path) -> None:
     dev_env.write_text(DEV_ENV.read_text(), encoding="utf-8")
     spec_text = (
         EXAMPLE_SPEC.read_text(encoding="utf-8")
-        .replace("examples/basic/.env.dev", str(dev_env))
-        .replace("examples/basic/.env.prod", str(tmp_path / "missing.env"))
+        .replace(".env.dev", str(dev_env))
+        .replace(".env.prod", str(tmp_path / "missing.env"))
     )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
@@ -782,6 +815,9 @@ def test_cli_inspect_json_output() -> None:
     first_variable = payload["variables"][0]
     assert first_variable["name"] == "DATABASE_URL"
     assert "profiles" in payload
+    first_profile = payload["profiles"][0]
+    expected_path = (EXAMPLE_SPEC.parent / Path(first_profile["env_file"]).expanduser()).resolve()
+    assert first_profile["resolved_env_file"] == str(expected_path)
 
 
 def test_cli_check_orders_severity_and_reports_info(tmp_path: Path) -> None:
