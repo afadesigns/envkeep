@@ -128,14 +128,7 @@ class ValidationReport:
     def __iter__(self) -> Iterator[ValidationIssue]:  # pragma: no cover - trivial
         return iter(self.issues)
 
-    def _track_issue(self, issue: ValidationIssue) -> None:
-        self._severity_counts[issue.severity] += 1
-        self._code_counts[issue.code] += 1
-        self._variable_counts[issue.variable] += 1
-        self._severity_buckets[issue.severity].append(issue)
-        self._code_buckets.setdefault(issue.code, []).append(issue)
-        self._variable_buckets.setdefault(issue.variable, []).append(issue)
-        self._severity_variables[issue.severity].add(issue.variable)
+    def _invalidate_issue_caches(self, issue: ValidationIssue) -> None:
         self._severity_variable_cache.pop(issue.severity, None)
         self._sorted_severity_cache.pop(issue.severity, None)
         self._sorted_code_cache.pop(issue.code, None)
@@ -146,6 +139,16 @@ class ValidationReport:
         self._variables_by_severity_cache = None
         self._top_variables_cache = None
         self._most_common_codes_cache = None
+
+    def _track_issue(self, issue: ValidationIssue) -> None:
+        self._severity_counts[issue.severity] += 1
+        self._code_counts[issue.code] += 1
+        self._variable_counts[issue.variable] += 1
+        self._severity_buckets[issue.severity].append(issue)
+        self._code_buckets.setdefault(issue.code, []).append(issue)
+        self._variable_buckets.setdefault(issue.variable, []).append(issue)
+        self._severity_variables[issue.severity].add(issue.variable)
+        self._invalidate_issue_caches(issue)
 
     def add(self, issue: ValidationIssue) -> None:
         self.issues.append(issue)
@@ -203,16 +206,7 @@ class ValidationReport:
         return variable in self._variable_counts
 
     def issues_for(self, variable: str) -> list[ValidationIssue]:
-        cached = self._sorted_variable_cache.get(variable)
-        if cached is not None:
-            return [*cached]
-        bucket = self._variable_buckets.get(variable)
-        if not bucket:
-            self._sorted_variable_cache[variable] = ()
-            return []
-        sorted_bucket = tuple(sorted(bucket, key=self._issue_sort_key))
-        self._sorted_variable_cache[variable] = sorted_bucket
-        return [*sorted_bucket]
+        return [*self._sorted_variable_bucket(variable)]
 
     def variables_by_severity(self) -> dict[str, list[str]]:
         cached = self._variables_by_severity_cache
@@ -308,16 +302,31 @@ class ValidationReport:
         return [*sorted_bucket]
 
     def issues_by_code(self, code: str) -> list[ValidationIssue]:
+        return [*self._sorted_code_bucket(code)]
+
+    def _sorted_variable_bucket(self, variable: str) -> tuple[ValidationIssue, ...]:
+        cached = self._sorted_variable_cache.get(variable)
+        if cached is not None:
+            return cached
+        bucket = self._variable_buckets.get(variable)
+        if not bucket:
+            self._sorted_variable_cache[variable] = ()
+            return ()
+        sorted_bucket = tuple(sorted(bucket, key=self._issue_sort_key))
+        self._sorted_variable_cache[variable] = sorted_bucket
+        return sorted_bucket
+
+    def _sorted_code_bucket(self, code: str) -> tuple[ValidationIssue, ...]:
         cached = self._sorted_code_cache.get(code)
         if cached is not None:
-            return [*cached]
+            return cached
         bucket = self._code_buckets.get(code)
         if not bucket:
             self._sorted_code_cache[code] = ()
-            return []
+            return ()
         sorted_bucket = tuple(sorted(bucket, key=self._issue_sort_key))
         self._sorted_code_cache[code] = sorted_bucket
-        return [*sorted_bucket]
+        return sorted_bucket
 
     @staticmethod
     def _casefold_sorted(values: Iterable[str]) -> list[str]:
@@ -332,21 +341,20 @@ class ValidationReport:
     def warning_summary(self) -> dict[str, Any]:
         cached = self._warning_summary_cache
         if cached is None:
+            duplicate_issues = self._sorted_code_bucket("duplicate")
+            extra_issues = self._sorted_code_bucket("extra")
+            invalid_line_issues = self._sorted_code_bucket("invalid_line")
             duplicates = tuple(
-                self._casefold_sorted(
-                    issue.variable for issue in self.issues_by_code("duplicate")
-                )
+                self._casefold_sorted(issue.variable for issue in duplicate_issues)
             )
             extras = tuple(
-                self._casefold_sorted(
-                    issue.variable for issue in self.issues_by_code("extra")
-                )
+                self._casefold_sorted(issue.variable for issue in extra_issues)
             )
             invalid_lines = tuple(
                 sorted(
                     (
                         (issue.variable, issue.hint or issue.message)
-                        for issue in self.issues_by_code("invalid_line")
+                        for issue in invalid_line_issues
                     ),
                     key=lambda item: self._invalid_line_sort_key(item[0]),
                 )
@@ -442,15 +450,18 @@ class DiffReport:
     def __len__(self) -> int:  # pragma: no cover - trivial
         return self.change_count
 
-    def _track_entry(self, entry: DiffEntry) -> None:
-        self._counts[entry.kind] += 1
-        self._kind_buckets.setdefault(entry.kind, []).append(entry)
-        self._variable_counts[entry.variable] += 1
+    def _invalidate_entry_caches(self, entry: DiffEntry) -> None:
         self._top_variables_cache = None
         self._variables_by_kind_cache = None
         self._sorted_kind_cache.pop(entry.kind, None)
         self._variables_cache = None
         self._sorted_entries_cache = None
+
+    def _track_entry(self, entry: DiffEntry) -> None:
+        self._counts[entry.kind] += 1
+        self._kind_buckets.setdefault(entry.kind, []).append(entry)
+        self._variable_counts[entry.variable] += 1
+        self._invalidate_entry_caches(entry)
 
     def add(self, entry: DiffEntry) -> None:
         self.entries.append(entry)
