@@ -9,7 +9,16 @@ from pathlib import Path
 
 
 def run_git(args: list[str]) -> str:
-    result = subprocess.run(["git", *args], capture_output=True, text=True, check=True)
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        message = exc.stderr.strip() or exc.stdout.strip() or "git command failed"
+        raise RuntimeError(message) from exc
     return result.stdout
 
 
@@ -45,11 +54,22 @@ def format_notes(commits: list[str]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate release notes")
     parser.add_argument("--since", help="Git ref to start from", default=None)
-    parser.add_argument("--output", help="Where to write notes", type=Path, default=Path("RELEASE_NOTES.md"))
+    parser.add_argument(
+        "--output",
+        help="Where to write notes",
+        type=Path,
+        default=Path("RELEASE_NOTES.md"),
+    )
     args = parser.parse_args()
 
-    commits = collect_commits(args.since)
+    try:
+        commits = collect_commits(args.since)
+    except RuntimeError as exc:
+        print(f"Failed to collect commits: {exc}", file=sys.stderr)
+        return 1
     notes = format_notes(commits) if commits else "No notable changes."
+    if args.output.parent:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(notes + "\n", encoding="utf-8")
     print(f"Release notes written to {args.output}")
     return 0

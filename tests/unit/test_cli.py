@@ -145,6 +145,21 @@ def test_cli_generate_stdout() -> None:
     assert "DATABASE_URL=" in result.stdout
 
 
+def test_cli_generate_no_redact_secrets() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--spec",
+            str(EXAMPLE_SPEC),
+            "--no-redact-secrets",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "API_TOKEN=<redacted>" in result.stdout
+    assert "API_TOKEN=***" not in result.stdout
+
+
 def test_cli_generate_writes_nested_path(tmp_path: Path) -> None:
     target = tmp_path / "nested" / "example.env"
     result = runner.invoke(

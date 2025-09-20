@@ -67,12 +67,15 @@ packages = ["src/envkeep"]
 
 [tool.ruff]
 line-length = 100
-select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "COM"]
-ignore = ["S603", "S607"]
 exclude = [
   "docs",
   "benchmarks",
 ]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "COM"]
+ignore = ["S603", "S607"]
+per-file-ignores = {"tests/**/*" = ["S101"]}
 
 [tool.ruff.lint.isort]
 known-first-party = ["envkeep"]

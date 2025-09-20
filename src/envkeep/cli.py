@@ -2,22 +2,21 @@ from __future__ import annotations
 
 import json
 import sys
+import warnings
 from collections import Counter
 from collections.abc import Iterable
 from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
-import warnings
-
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from .report import DiffKind, DiffReport, IssueSeverity, ValidationIssue, ValidationReport
+from ._compat import tomllib
+from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
 from .spec import EnvSpec
-from ._compat import tomllib
 
 try:  # pragma: no cover - Click 8.0 compatibility
     from click._utils import UNSET as _CLICK_UNSET
@@ -65,31 +64,30 @@ def _coerce_output_format(raw: str) -> OutputFormat:
         typer.echo(str(exc))
         raise typer.Exit(code=2) from exc
 
-
-def _format_option() -> typer.models.OptionInfo:
-    option = _option_with_value(
-        "text",
-        "--format",
-        "-f",
-        help="Output format: text or json.",
-    )
-    option.case_sensitive = False
-    return option
-
-
-def _spec_option() -> typer.models.OptionInfo:
-    return _option_with_value(Path("envkeep.toml"), "--spec", "-s", help="Path to envkeep spec.")
-
-
-def _profile_option() -> typer.models.OptionInfo:
-    option = _option_with_value(
-        "all",
-        "--profile",
-        "-p",
-        help="Profile to validate (all to run every profile).",
-    )
-    option.show_default = True
-    return option
+SPEC_OPTION = _option_with_value(Path("envkeep.toml"), "--spec", "-s", help="Path to envkeep spec.")
+FORMAT_OPTION = _option_with_value(
+    "text",
+    "--format",
+    "-f",
+    help="Output format: text or json.",
+)
+FORMAT_OPTION.case_sensitive = False
+PROFILE_OPTION = _option_with_value(
+    "all",
+    "--profile",
+    "-p",
+    help="Profile to validate (all to run every profile).",
+)
+PROFILE_OPTION.show_default = True
+GENERATE_OUTPUT_OPTION = _option_with_value(
+    None,
+    "--output",
+    "-o",
+    help="Where to write the generated file.",
+)
+ENV_FILE_ARGUMENT = typer.Argument(..., help="Path to the environment file.")
+DIFF_FIRST_ARGUMENT = typer.Argument(..., help="Baseline environment file.")
+DIFF_SECOND_ARGUMENT = typer.Argument(..., help="Target environment file.")
 
 
 def _emit_json(payload: Any) -> None:
@@ -320,9 +318,9 @@ def load_spec(path: Path, *, stdin_data: str | None = None) -> EnvSpec:
 
 @app.command()
 def check(
-    env_file: Path = typer.Argument(..., help="Path to the environment file."),
-    spec: Path = _spec_option(),
-    output_format: str = _format_option(),
+    env_file: Path = ENV_FILE_ARGUMENT,
+    spec: Path = SPEC_OPTION,
+    output_format: str = FORMAT_OPTION,
     allow_extra: bool = typer.Option(
         False,
         "--allow-extra",
@@ -374,10 +372,10 @@ def check(
 
 @app.command()
 def diff(
-    first: Path = typer.Argument(..., help="Baseline environment file."),
-    second: Path = typer.Argument(..., help="Target environment file."),
-    spec: Path = _spec_option(),
-    output_format: str = _format_option(),
+    first: Path = DIFF_FIRST_ARGUMENT,
+    second: Path = DIFF_SECOND_ARGUMENT,
+    spec: Path = SPEC_OPTION,
+    output_format: str = FORMAT_OPTION,
     summary_top: int = typer.Option(
         3,
         "--summary-top",
@@ -424,13 +422,8 @@ def diff(
 
 @app.command()
 def generate(
-    spec: Path = _spec_option(),
-    output: Optional[Path] = _option_with_value(
-        None,
-        "--output",
-        "-o",
-        help="Where to write the generated file.",
-    ),
+    spec: Path = SPEC_OPTION,
+    output: Optional[Path] = GENERATE_OUTPUT_OPTION,
     no_redact_secrets: bool = typer.Option(
         False,
         "--no-redact-secrets",
@@ -453,8 +446,8 @@ def generate(
 
 @app.command()
 def inspect(
-    spec: Path = _spec_option(),
-    output_format: str = _format_option(),
+    spec: Path = SPEC_OPTION,
+    output_format: str = FORMAT_OPTION,
 ) -> None:
     """Print a summary of variables and profiles declared in the spec."""
 
@@ -521,8 +514,8 @@ def inspect(
 
 @app.command()
 def doctor(
-    spec: Path = _spec_option(),
-    profile: str = _profile_option(),
+    spec: Path = SPEC_OPTION,
+    profile: str = PROFILE_OPTION,
     allow_extra: bool = typer.Option(
         False,
         "--allow-extra",
@@ -530,7 +523,7 @@ def doctor(
         is_flag=True,
         flag_value=True,
     ),
-    output_format: str = _format_option(),
+    output_format: str = FORMAT_OPTION,
     fail_on_warnings: bool = typer.Option(
         False,
         "--fail-on-warnings",

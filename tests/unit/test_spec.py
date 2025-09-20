@@ -39,7 +39,7 @@ def test_diff_detects_changes(tmp_path: Path) -> None:
                 "DEBUG=false",
                 "ALLOWED_HOSTS=localhost",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -50,7 +50,7 @@ def test_diff_detects_changes(tmp_path: Path) -> None:
                 "DEBUG=true",
                 "ALLOWED_HOSTS=localhost,api",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -71,7 +71,7 @@ def test_validate_allows_extra_when_requested(tmp_path: Path) -> None:
                 "ALLOWED_HOSTS=localhost",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
                 "EXTRA_VAR=value",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -93,7 +93,7 @@ def test_validate_surfaces_duplicate_keys(tmp_path: Path) -> None:
                 "DATABASE_URL=postgresql://localhost/prod",
                 "DEBUG=false",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -115,7 +115,7 @@ def test_validate_reports_invalid_lines(tmp_path: Path) -> None:
                 "DATABASE_URL=postgresql://localhost/dev",
                 "DEBUG=false",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
