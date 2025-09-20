@@ -45,6 +45,10 @@ class ValidationReport:
     _variable_counts: Counter[str] = field(init=False, repr=False)
     _severity_buckets: dict[IssueSeverity, list[ValidationIssue]] = field(init=False, repr=False)
     _code_buckets: dict[str, list[ValidationIssue]] = field(init=False, repr=False)
+    _variable_buckets: dict[str, list[ValidationIssue]] = field(init=False, repr=False)
+    _severity_variables: dict[IssueSeverity, set[str]] = field(init=False, repr=False)
+    _top_variables_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
+    _most_common_codes_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
     _issue_sort_key = staticmethod(
         lambda issue: (
             issue.variable.casefold(),
@@ -61,6 +65,10 @@ class ValidationReport:
         self._severity_buckets = {severity: [] for severity in IssueSeverity}
         self._code_buckets: dict[str, list[ValidationIssue]] = {}
         self._variable_counts = Counter()
+        self._variable_buckets = {}
+        self._severity_variables = {severity: set() for severity in IssueSeverity}
+        self._top_variables_cache = None
+        self._most_common_codes_cache = None
         if self.issues:
             captured = list(self.issues)
             self.issues.clear()
@@ -110,6 +118,10 @@ class ValidationReport:
         self._variable_counts[issue.variable] += 1
         self._severity_buckets[issue.severity].append(issue)
         self._code_buckets.setdefault(issue.code, []).append(issue)
+        self._variable_buckets.setdefault(issue.variable, []).append(issue)
+        self._severity_variables[issue.severity].add(issue.variable)
+        self._top_variables_cache = None
+        self._most_common_codes_cache = None
 
     def add(self, issue: ValidationIssue) -> None:
         self.issues.append(issue)
@@ -131,20 +143,27 @@ class ValidationReport:
         return {code: self._code_counts[code] for code in sorted(self._code_counts)}
 
     def most_common_codes(self, limit: int | None = None) -> list[tuple[str, int]]:
-        items = self._code_counts.most_common()
-        sorted_items = sorted(items, key=lambda item: (-item[1], item[0]))
+        if self._most_common_codes_cache is None:
+            self._most_common_codes_cache = sorted(
+                self._code_counts.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
         if limit is not None:
-            return sorted_items[:limit]
-        return sorted_items
+            return self._most_common_codes_cache[:limit]
+        return [*self._most_common_codes_cache]
 
     def codes(self) -> tuple[str, ...]:
         return tuple(sorted(self._code_counts))
 
     def variables(self) -> tuple[str, ...]:
-        if not self.issues:
+        if not self._variable_counts:
             return ()
-        unique = {issue.variable for issue in self.issues}
-        return tuple(sorted(unique, key=lambda name: (name.casefold(), name)))
+        return tuple(
+            sorted(
+                self._variable_counts,
+                key=lambda name: (name.casefold(), name),
+            )
+        )
 
     def has_code(self, code: str) -> bool:
         return code in self._code_counts
@@ -153,28 +172,31 @@ class ValidationReport:
         return variable in self._variable_counts
 
     def issues_for(self, variable: str) -> list[ValidationIssue]:
-        matches = [issue for issue in self.issues if issue.variable == variable]
-        return sorted(matches, key=self._issue_sort_key)
+        bucket = self._variable_buckets.get(variable)
+        if not bucket:
+            return []
+        return [*sorted(bucket, key=self._issue_sort_key)]
 
     def variables_by_severity(self) -> dict[str, list[str]]:
-        mapping: dict[str, list[str]] = {}
-        for severity in IssueSeverity:
-            items = {
-                issue.variable
-                for issue in self._severity_buckets.get(severity, [])
-            }
-            mapping[severity.value] = sorted(
-                items,
-                key=lambda name: (name.casefold(), name),
-            )
-        return mapping
+        return {
+            severity.value: [
+                *sorted(
+                    self._severity_variables[severity],
+                    key=lambda name: (name.casefold(), name),
+                )
+            ]
+            for severity in IssueSeverity
+        }
 
     def top_variables(self, limit: int | None = None) -> list[tuple[str, int]]:
-        items = self._variable_counts.most_common()
-        sorted_items = sorted(items, key=lambda item: (-item[1], item[0]))
+        if self._top_variables_cache is None:
+            self._top_variables_cache = sorted(
+                self._variable_counts.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
         if limit is not None:
-            return sorted_items[:limit]
-        return sorted_items
+            return self._top_variables_cache[:limit]
+        return [*self._top_variables_cache]
 
     def non_empty_severities(self) -> tuple[IssueSeverity, ...]:
         order: tuple[IssueSeverity, ...] = (
@@ -279,6 +301,8 @@ class DiffReport:
     _counts: Counter[DiffKind] = field(init=False, repr=False)
     _kind_buckets: dict[DiffKind, list[DiffEntry]] = field(init=False, repr=False)
     _variable_counts: Counter[str] = field(init=False, repr=False)
+    _top_variables_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
+    _variables_by_kind_cache: dict[str, tuple[str, ...]] | None = field(init=False, repr=False)
     _kind_order: tuple[DiffKind, ...] = (
         DiffKind.MISSING,
         DiffKind.EXTRA,
@@ -289,6 +313,8 @@ class DiffReport:
         self._counts = Counter()
         self._kind_buckets: dict[DiffKind, list[DiffEntry]] = {kind: [] for kind in DiffKind}
         self._variable_counts = Counter()
+        self._top_variables_cache = None
+        self._variables_by_kind_cache = None
         if self.entries:
             captured = list(self.entries)
             self.entries.clear()
@@ -309,6 +335,8 @@ class DiffReport:
         self._counts[entry.kind] += 1
         self._kind_buckets.setdefault(entry.kind, []).append(entry)
         self._variable_counts[entry.variable] += 1
+        self._top_variables_cache = None
+        self._variables_by_kind_cache = None
 
     def add(self, entry: DiffEntry) -> None:
         self.entries.append(entry)
@@ -365,33 +393,47 @@ class DiffReport:
         return tuple(kind for kind in self._kind_order if self.has_kind(kind))
 
     def variables(self) -> tuple[str, ...]:
-        if not self.entries:
+        if not self._variable_counts:
             return ()
-        unique = {entry.variable for entry in self.entries}
-        return tuple(sorted(unique, key=lambda name: (name.casefold(), name)))
+        return tuple(
+            sorted(
+                self._variable_counts,
+                key=lambda name: (name.casefold(), name),
+            )
+        )
 
     def has_variable(self, variable: str) -> bool:
         return variable in self._variable_counts
 
     def top_variables(self, limit: int | None = None) -> list[tuple[str, int]]:
-        items = self._variable_counts.most_common()
-        sorted_items = sorted(items, key=lambda item: (-item[1], item[0]))
+        if self._top_variables_cache is None:
+            self._top_variables_cache = sorted(
+                self._variable_counts.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
         if limit is not None:
-            return sorted_items[:limit]
-        return sorted_items
+            return self._top_variables_cache[:limit]
+        return [*self._top_variables_cache]
 
     def variables_by_kind(self) -> dict[str, list[str]]:
-        mapping: dict[str, list[str]] = {}
-        for kind in DiffKind:
-            variables = {
-                entry.variable
-                for entry in self._kind_buckets.get(kind, [])
-            }
-            mapping[kind.value] = sorted(
-                variables,
-                key=lambda name: (name.casefold(), name),
-            )
-        return mapping
+        if self._variables_by_kind_cache is None:
+            computed: dict[str, tuple[str, ...]] = {}
+            for kind in DiffKind:
+                variables = {
+                    entry.variable
+                    for entry in self._kind_buckets.get(kind, [])
+                }
+                computed[kind.value] = tuple(
+                    sorted(
+                        variables,
+                        key=lambda name: (name.casefold(), name),
+                    )
+                )
+            self._variables_by_kind_cache = computed
+        return {
+            key: [*values]
+            for key, values in self._variables_by_kind_cache.items()
+        }
 
     def counts_by_kind(self) -> dict[str, int]:
         return {
