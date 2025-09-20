@@ -61,7 +61,7 @@ See [`examples/basic`](examples/basic) for a complete spec and environment pair 
 ## Features
 - Typed spec parsing with validation for defaults, patterns, and enumerated values.
 - Human-friendly and machine-readable reports (`--format text|json`).
-- Rich inspection tooling to summarize variables and profiles (`envkeep inspect`, JSON-ready output).
+- Rich inspection tooling to summarize variables and profiles (`envkeep inspect`, JSON-ready output plus resolved profile paths).
 - Secrets-aware diffing that redacts sensitive values.
 - Profiles support for multi-stage environments validated via `envkeep doctor`; relative profile paths resolve against the spec (override with `--profile-base`).
 - Configurable summaries that bound the "top variables" lists via `--summary-top` in `check`, `diff`, and `doctor`.

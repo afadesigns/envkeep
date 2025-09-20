@@ -9,6 +9,7 @@ All notable changes to Envkeep will be documented here.
 - Added `--profile-base` to `envkeep doctor` for overriding the directory used to resolve relative profile paths, especially when specs are streamed from stdin.
 - Bundled runnable Socialsense `.env` fixtures under `examples/socialsense/env/` to demonstrate multi-profile validation without extra checkouts.
 - Extended `envkeep inspect --format json` profile entries with a `resolved_env_file` field that exposes the absolute path Envkeep validated.
+- Added `--profile-base` to `envkeep inspect` and surfaced resolved profile paths in both text and JSON output.
 
 ### Changed
 - Hardened `.env` parsing to preserve escaped `#` characters, honour embedded quotes, and surface unterminated strings as validation warnings.
@@ -17,6 +18,7 @@ All notable changes to Envkeep will be documented here.
 - Updated project branding and metadata for Andreas Fahl / afadesigns ahead of the public repository launch.
 - Relative profile `env_file` values now resolve against the spec directory by default; use `--profile-base` when a different root is required.
 - Text-mode `envkeep doctor` reports now surface a "Resolved profile paths" section showing both the declared and absolute environment file locations.
+- `envkeep inspect` text mode now appends the resolved absolute path to each profile entry for quick auditing.
 
 ### Documentation
 - Clarified how to escape `#` characters and quotes in `.env` files within the getting started guide.

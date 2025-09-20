@@ -55,6 +55,12 @@ Parent directories for `--output` are created automatically.
 ## `envkeep inspect`
 Display a summary of variables and profiles declared in the spec.
 
+Options:
+- `--format text|json` (default `text`)
+- `--profile-base PATH` to resolve profile `env_file` entries against an alternate directory (mirrors `doctor`)
+
+`envkeep inspect --format json` mirrors the spec summary while exposing each profile's declared and resolved `env_file`. Text output now appends the resolved absolute path to every profile entry so operators can audit which files were read.
+
 ```
 envkeep inspect --spec envkeep.toml
 ```
@@ -78,7 +84,7 @@ Exit code aggregates results across profiles (non-zero if any profile fails).
 With `--format json`, the command prints an object containing each profile report and omits the Rich table output. Each profile entry includes `report`, `summary`, and `warnings`. The per-profile summary mirrors `envkeep check` (issue counts plus `has_*` flags, `non_empty_severities`, `most_common_codes`, ordered `variables`, `variables_by_severity`, and `top_variables`), and the top-level payload exposes both an aggregated `summary` (profiles checked, missing profiles, severity totals, success flag, aggregated `non_empty_severities`, `most_common_codes`, `variables`, and `top_variables`) and a `warnings` field with deduplicated, alphabetised duplicate/extra variables along with per-profile invalid line details for automation.
 When rendered as text, Envkeep prints a `Doctor Summary` block with totals for missing profiles, severities, a warnings breakdown, an alphabetical list of impacted variables, and a `Top impacted variables` line that highlights the most frequent offenders with their counts.
 
-Profile `env_file` entries are resolved relative to the spec location (or the current working directory when streaming a spec from stdin). Override this base with `--profile-base PATH` when you want to point at another checkout or a temporary workspace. Values such as `../env/app.env` and `~/service.env` are expanded before validation, so specs remain portable across checkouts. In JSON output each profile now includes both the original `env_file` string and a `resolved_env_file` field with the absolute path Envkeep validated. See `examples/socialsense/envkeep.toml` for a larger multi-profile example that relies on the bundled `env/` directory.
+Profile `env_file` entries are resolved relative to the spec location (or the current working directory when streaming a spec from stdin). Override this base with `--profile-base PATH` when you want to point at another checkout or a temporary workspace. Values such as `../env/app.env` and `~/service.env` are expanded before validation, so specs remain portable across checkouts. In JSON output each profile now includes both the original `env_file` string and a `resolved_env_file` field with the absolute path Envkeep validated, and the text report ends with a "Resolved profile paths" block. See `examples/socialsense/envkeep.toml` for a larger multi-profile example that relies on the bundled `env/` directory.
 
 Example JSON excerpt:
 

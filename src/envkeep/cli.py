@@ -465,10 +465,29 @@ def generate(
 def inspect(
     spec: Path = SPEC_OPTION,
     output_format: str = FORMAT_OPTION,
+    profile_base: Path | None = typer.Option(
+        None,
+        "--profile-base",
+        help="Override the base directory used to resolve relative profile env_file paths.",
+    ),
 ) -> None:
     """Print a summary of variables and profiles declared in the spec."""
 
+    if isinstance(profile_base, typer.models.OptionInfo):
+        profile_base = None
     spec_base = _spec_base_dir(spec)
+    profile_base_dir = spec_base
+    if profile_base is not None:
+        candidate_base = profile_base.expanduser()
+        if not candidate_base.exists():
+            raise typer.BadParameter(
+                f"profile base '{candidate_base}' does not exist"
+            )
+        if not candidate_base.is_dir():
+            raise typer.BadParameter(
+                f"profile base '{candidate_base}' is not a directory"
+            )
+        profile_base_dir = candidate_base.resolve()
     env_spec = load_spec(spec)
     fmt = _coerce_output_format(output_format)
     if fmt is OutputFormat.JSON:
@@ -487,21 +506,24 @@ def inspect(
             }
             for variable in env_spec.variables
         ]
-        profiles_payload = [
-            {
-                "name": profile.name,
-                "env_file": profile.env_file,
-                "resolved_env_file": str(
-                    _resolve_profile_path(profile.env_file, base_dir=spec_base)
-                ),
-                "description": profile.description,
-            }
-            for profile in env_spec.profiles
-        ]
+        profiles_payload = []
+        for profile in env_spec.profiles:
+            resolved_path = _resolve_profile_path(
+                profile.env_file, base_dir=profile_base_dir
+            )
+            profiles_payload.append(
+                {
+                    "name": profile.name,
+                    "env_file": profile.env_file,
+                    "resolved_env_file": str(resolved_path),
+                    "description": profile.description,
+                }
+            )
         payload = {
             "summary": env_spec.summary(),
             "variables": variables_payload,
             "profiles": profiles_payload,
+            "profile_base_dir": str(profile_base_dir),
         }
         _emit_json(payload)
         return
@@ -523,12 +545,20 @@ def inspect(
         table.add_section()
         table.add_row("Profiles", "", "", "", "")
         for profile in env_spec.profiles:
+            resolved_path = _resolve_profile_path(
+                profile.env_file, base_dir=profile_base_dir
+            )
+            descriptor = profile.description or profile.env_file
+            if descriptor:
+                descriptor = f"{descriptor} ({resolved_path})"
+            else:
+                descriptor = str(resolved_path)
             table.add_row(
                 f"• {profile.name}",
                 "",
                 "",
                 "",
-                profile.description or profile.env_file,
+                descriptor,
             )
     console.print(table)
 

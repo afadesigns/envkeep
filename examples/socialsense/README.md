@@ -11,6 +11,7 @@ Try the workflows:
 uv run envkeep doctor --spec examples/socialsense/envkeep.toml
 uv run envkeep doctor --spec examples/socialsense/envkeep.toml --profile-base /tmp/other-checkout --profile database
 uv run envkeep doctor --spec examples/socialsense/envkeep.toml --format json | jq '.summary.profile_base_dir, .profiles[] | {profile, resolved_env_file}'
+uv run envkeep inspect --spec examples/socialsense/envkeep.toml --profile-base examples/socialsense/env --format json | jq '.profiles[] | {profile: .name, resolved: .resolved_env_file}'
 ```
 
-The text report ends with a "Resolved profile paths" block that lists the original `env_file` values alongside the absolute paths Envkeep validated, so you always know which files were inspected.
+The text reports for both `inspect` and `doctor` end with a "Resolved profile paths" block that lists the original `env_file` values alongside the absolute paths Envkeep validated, so you always know which files were inspected.

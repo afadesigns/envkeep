@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -886,12 +887,78 @@ def test_cli_inspect_json_output() -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["summary"]["version"] == 1
+    assert Path(payload["profile_base_dir"]).resolve() == EXAMPLE_SPEC.parent.resolve()
     first_variable = payload["variables"][0]
     assert first_variable["name"] == "DATABASE_URL"
     assert "profiles" in payload
     first_profile = payload["profiles"][0]
     expected_path = (EXAMPLE_SPEC.parent / Path(first_profile["env_file"]).expanduser()).resolve()
     assert first_profile["resolved_env_file"] == str(expected_path)
+
+
+def test_cli_inspect_text_shows_resolved_paths() -> None:
+    with tempfile.TemporaryDirectory(prefix="ek-") as tmpdir:
+        base = Path(tmpdir)
+        env_dir = base / "env"
+        env_dir.mkdir()
+        env_file = env_dir / "app.env"
+        env_file.write_text("FOO=value\n", encoding="utf-8")
+        spec_text = textwrap.dedent(
+            """
+            version = 1
+
+            [[variables]]
+            name = "FOO"
+
+            [[profiles]]
+            name = "app"
+            env_file = "env/app.env"
+            description = "Primary"
+            """
+        )
+        spec_file = base / "envkeep.toml"
+        spec_file.write_text(spec_text, encoding="utf-8")
+        result = runner.invoke(app, ["inspect", "--spec", str(spec_file)])
+        assert result.exit_code == 0
+        assert "Primary" in result.stdout
+        assert "env/app.env" in result.stdout
+
+
+def test_cli_inspect_profile_base_override(tmp_path: Path) -> None:
+    env_dir = tmp_path / "alternate" / "env"
+    env_dir.mkdir(parents=True)
+    env_file = env_dir / "app.env"
+    env_file.write_text("FOO=value\n", encoding="utf-8")
+    spec_text = textwrap.dedent(
+        """
+        version = 1
+
+        [[variables]]
+        name = "FOO"
+
+        [[profiles]]
+        name = "app"
+        env_file = "env/app.env"
+        """
+    )
+    result = runner.invoke(
+        app,
+        [
+            "inspect",
+            "--spec",
+            "-",
+            "--format",
+            "json",
+            "--profile-base",
+            str(env_dir.parent),
+        ],
+        input=spec_text,
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    profile = payload["profiles"][0]
+    assert profile["resolved_env_file"] == str(env_file)
+    assert payload["profile_base_dir"] == str(env_dir.parent.resolve())
 
 
 def test_cli_check_orders_severity_and_reports_info(tmp_path: Path) -> None:
