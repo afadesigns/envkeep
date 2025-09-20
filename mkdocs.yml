@@ -26,16 +26,18 @@ nav:
   - How-to:
       - CI Enforcement: how-to/ci-enforcement.md
       - Generate Examples: how-to/generate-examples.md
+      - Validate Multi-profile Environments: how-to/multi-profile-validation.md
   - Benchmarks: benchmarks.md
   - Operational Docs:
       - Achievement Plan: achievement-plan.md
       - Post-Publish Checklist: post-publish-checklist.md
       - Growth KPIs: growth-metrics.md
       - Maintenance Plan: maintenance-plan.md
-  - Contributing: ../CONTRIBUTING.md
-  - Changelog: ../CHANGELOG.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
 plugins:
   - search
+  - autorefs
   - mkdocstrings:
       handlers:
         python:

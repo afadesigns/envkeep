@@ -16,6 +16,7 @@ All notable changes to Envkeep will be documented here.
 - Shielded specification caches behind read-only views to prevent accidental mutation between validations.
 - Updated project branding and metadata for Andreas Fahl / afadesigns ahead of the public repository launch.
 - Relative profile `env_file` values now resolve against the spec directory by default; use `--profile-base` when a different root is required.
+- Text-mode `envkeep doctor` reports now surface a "Resolved profile paths" section showing both the declared and absolute environment file locations.
 
 ### Documentation
 - Clarified how to escape `#` characters and quotes in `.env` files within the getting started guide.

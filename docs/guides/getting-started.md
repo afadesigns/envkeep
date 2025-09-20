@@ -73,7 +73,7 @@ envkeep inspect --spec envkeep.toml --format json | jq '.summary'
 
 ## Explore Examples
 
-Browse [`examples/basic`](../../examples/basic/README.md) for a more complete spec, including patterns and profile definitions.
+Browse [`examples/basic`](https://github.com/afadesigns/envkeep/tree/main/examples/basic) for a more complete spec, including patterns and profile definitions.
 
 ## Next Steps
 - Wire Envkeep into CI using the [CI how-to](../how-to/ci-enforcement.md).

@@ -16,6 +16,8 @@ uv run envkeep doctor --spec examples/socialsense/envkeep.toml
 
 Envkeep resolves every profile path relative to the spec directory and expands user home markers such as `~/service.env`. When you need to point at a different checkout (for example, CI workspaces), supply `--profile-base /path/to/checkout` to override the resolution root.
 
+The text output concludes with a "Resolved profile paths" section that lists each profile alongside both its declared `env_file` value and the absolute path Envkeep validated, making it easy to audit which files were inspected.
+
 ## Target specific profiles
 
 Limit validation to one profile when you only need to audit a subset.

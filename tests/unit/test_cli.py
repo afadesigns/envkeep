@@ -296,6 +296,9 @@ def test_cli_doctor_json_output(tmp_path: Path) -> None:
     assert profile["summary"]["severity_totals"]["warning"] == 0
     assert profile["warnings"]["total"] == 0
     assert payload["summary"]["severity_totals"]["warning"] == 0
+    assert profile["env_file"] == str(env_file)
+    assert profile["resolved_env_file"] == str(env_file)
+    assert payload["summary"]["profile_base_dir"] == str(spec_copy.parent.resolve())
 
 
 def test_cli_doctor_fail_on_warnings(tmp_path: Path) -> None:
@@ -609,6 +612,77 @@ def test_cli_doctor_reports_summary(tmp_path: Path) -> None:
     assert "Total info: 0" in result.stdout
     assert "Warnings breakdown: Duplicates: 0 · Extra variables: 0 · Invalid lines: 0" in result.stdout
     assert "Impacted variables:" not in result.stdout
+    assert "Resolved profile paths:" in result.stdout
+    dev_env_str = str(dev_env)
+    missing_env = str(tmp_path / "missing.env")
+    normalized_output = " ".join(result.stdout.split())
+    assert f"• development: {dev_env_str} -> {dev_env_str}" in normalized_output
+    assert (
+        f"• production: {missing_env} -> {missing_env} (missing)" in normalized_output
+    )
+
+
+def test_cli_doctor_profile_base_missing_dir(tmp_path: Path) -> None:
+    spec_text = textwrap.dedent(
+        """
+        version = 1
+
+        [[variables]]
+        name = "FOO"
+
+        [[profiles]]
+        name = "app"
+        env_file = "env/app.env"
+        """
+    )
+    missing_base = tmp_path / "missing"
+    result = runner.invoke(
+        app,
+        [
+            "doctor",
+            "--spec",
+            "-",
+            "--profile-base",
+            str(missing_base),
+        ],
+        input=spec_text,
+    )
+    assert result.exit_code != 0
+    normalized_stderr = " ".join(result.stderr.lower().split())
+    assert "profile base" in normalized_stderr
+    assert "not exist" in normalized_stderr
+
+
+def test_cli_doctor_profile_base_not_directory(tmp_path: Path) -> None:
+    spec_text = textwrap.dedent(
+        """
+        version = 1
+
+        [[variables]]
+        name = "FOO"
+
+        [[profiles]]
+        name = "app"
+        env_file = "env/app.env"
+        """
+    )
+    file_base = tmp_path / "base.txt"
+    file_base.write_text("not a directory", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "doctor",
+            "--spec",
+            "-",
+            "--profile-base",
+            str(file_base),
+        ],
+        input=spec_text,
+    )
+    assert result.exit_code != 0
+    normalized_stderr = " ".join(result.stderr.lower().split())
+    assert "profile base" in normalized_stderr
+    assert "not a directory" in normalized_stderr
 
 
 def test_cli_check_reads_from_stdin() -> None:

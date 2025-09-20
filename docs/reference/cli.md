@@ -79,3 +79,34 @@ With `--format json`, the command prints an object containing each profile repor
 When rendered as text, Envkeep prints a `Doctor Summary` block with totals for missing profiles, severities, a warnings breakdown, an alphabetical list of impacted variables, and a `Top impacted variables` line that highlights the most frequent offenders with their counts.
 
 Profile `env_file` entries are resolved relative to the spec location (or the current working directory when streaming a spec from stdin). Override this base with `--profile-base PATH` when you want to point at another checkout or a temporary workspace. Values such as `../env/app.env` and `~/service.env` are expanded before validation, so specs remain portable across checkouts. In JSON output each profile now includes both the original `env_file` string and a `resolved_env_file` field with the absolute path Envkeep validated. See `examples/socialsense/envkeep.toml` for a larger multi-profile example that relies on the bundled `env/` directory.
+
+Example JSON excerpt:
+
+```json
+{
+  "allow_extra": false,
+  "summary": {
+    "profiles_with_reports": 2,
+    "missing_profiles": 0,
+    "profile_base_dir": "/path/to/repo/examples/socialsense",
+    "severity_totals": {
+      "error": 0,
+      "warning": 0,
+      "info": 0
+    },
+    "non_empty_severities": ["info", "warning", "error"],
+    "most_common_codes": [],
+    "variables": [],
+    "top_variables": []
+  },
+  "profiles": [
+    {
+      "profile": "database",
+      "env_file": "env/database.env",
+      "resolved_env_file": "/path/to/repo/examples/socialsense/env/database.env",
+      "summary": {"is_success": true, "severity_totals": {"error": 0, "warning": 0, "info": 0}},
+      "warnings": {"total": 0}
+    }
+  ]
+}
+```

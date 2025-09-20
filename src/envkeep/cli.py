@@ -16,7 +16,7 @@ from rich.table import Table
 from ._compat import tomllib
 from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
-from .spec import EnvSpec
+from .spec import EnvSpec, ProfileSpec
 
 try:  # pragma: no cover - Click 8.0 compatibility
     from click._utils import UNSET as _CLICK_UNSET
@@ -232,6 +232,7 @@ def _emit_doctor_json(
     aggregated_codes: list[tuple[str, int]],
     aggregated_top_variables: list[tuple[str, int]],
     aggregated_variables: list[str],
+    profile_base_dir: str,
 ) -> None:
     severity_totals = {
         IssueSeverity.ERROR.value: 0,
@@ -278,6 +279,7 @@ def _emit_doctor_json(
         "most_common_codes": aggregated_codes,
         "variables": aggregated_variables,
         "top_variables": aggregated_top_variables,
+        "profile_base_dir": profile_base_dir,
     }
     def _line_number(entry: dict[str, Any]) -> int:
         raw = entry.get("line", "")
@@ -559,37 +561,48 @@ def doctor(
         None,
         "--profile-base",
         help="Override the base directory used to resolve relative profile env_file paths.",
-        exists=True,
-        file_okay=False,
-        resolve_path=True,
     ),
 ) -> None:
     """Validate one or more profiles declared in the spec."""
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
+    if isinstance(profile_base, typer.models.OptionInfo):
+        profile_base = None
     spec_base = _spec_base_dir(spec)
-    profile_base_dir = profile_base or spec_base
+    profile_base_dir = spec_base
+    if profile_base is not None:
+        candidate_base = profile_base.expanduser()
+        if not candidate_base.exists():
+            raise typer.BadParameter(
+                f"profile base '{candidate_base}' does not exist"
+            )
+        if not candidate_base.is_dir():
+            raise typer.BadParameter(
+                f"profile base '{candidate_base}' is not a directory"
+            )
+        profile_base_dir = candidate_base.resolve()
     env_spec = load_spec(spec)
     profiles = list(env_spec.iter_profiles())
     if not profiles:
         typer.echo("No profiles declared in spec.")
         raise typer.Exit(code=0)
 
-    selected: list[tuple[str, Path]] = []
+    def _selected_entry(item: ProfileSpec) -> dict[str, Any]:
+        resolved = _resolve_profile_path(item.env_file, base_dir=profile_base_dir)
+        return {
+            "name": item.name,
+            "env_file": item.env_file,
+            "path": resolved,
+        }
+
     if profile == "all":
-        selected = [
-            (item.name, _resolve_profile_path(item.env_file, base_dir=profile_base_dir))
-            for item in profiles
-        ]
+        selected_profiles = [_selected_entry(item) for item in profiles]
     else:
         mapping = env_spec.profiles_by_name()
         if profile not in mapping:
             raise typer.BadParameter(f"profile '{profile}' not found")
-        item = mapping[profile]
-        selected = [
-            (item.name, _resolve_profile_path(item.env_file, base_dir=profile_base_dir))
-        ]
+        selected_profiles = [_selected_entry(mapping[profile])]
 
     exit_code = 0
     fmt = _coerce_output_format(output_format)
@@ -610,12 +623,20 @@ def doctor(
     aggregated_variables: set[str] = set()
     aggregated_variable_counts: Counter[str] = Counter()
     top_limit = _normalized_limit(summary_top) or 0
-    for name, env_path in selected:
-        if not env_path.exists():
+    resolved_profile_records: list[tuple[str, str, Path, bool]] = []
+    for entry in selected_profiles:
+        name = entry["name"]
+        env_file_raw = entry["env_file"]
+        env_path = entry["path"]
+        exists = env_path.exists()
+        resolved_profile_records.append((name, env_file_raw, env_path, exists))
+        if not exists:
             missing_profiles += 1
             if use_json:
                 results.append({
                     "profile": name,
+                    "env_file": env_file_raw,
+                    "resolved_env_file": str(env_path),
                     "path": str(env_path),
                     "error": "missing env file",
                 })
@@ -645,6 +666,8 @@ def doctor(
             report_payload = report.to_dict(top_limit=top_limit)
             results.append({
                 "profile": name,
+                "env_file": env_file_raw,
+                "resolved_env_file": str(env_path),
                 "path": str(env_path),
                 "report": report_payload,
                 "summary": summary,
@@ -673,11 +696,12 @@ def doctor(
             aggregated_codes=aggregated_most_common_codes,
             aggregated_top_variables=aggregated_top_variables,
             aggregated_variables=aggregated_variables_list,
+            profile_base_dir=str(profile_base_dir),
         )
     else:
         console.rule("Doctor Summary")
         console.print(
-            f"Profiles checked: {checked_profiles}/{len(selected)}"
+            f"Profiles checked: {checked_profiles}/{len(selected_profiles)}"
         )
         console.print(
             " · ".join(
@@ -714,6 +738,13 @@ def doctor(
                 for variable, count in aggregated_top_variables
             )
             console.print(f"Top impacted variables: {formatted_variables}")
+        if resolved_profile_records:
+            console.print("Resolved profile paths:")
+            for name, env_file_raw, resolved_path, exists in resolved_profile_records:
+                status = "" if exists else " (missing)"
+                console.print(
+                    f"  • {name}: {env_file_raw} -> {resolved_path}{status}"
+                )
     raise typer.Exit(code=exit_code)
 
 def render_validation_report(
