@@ -175,12 +175,11 @@ def _format_severity_summary(report: ValidationReport, *, top_limit: int | None)
     ]
     if not parts:
         parts = [f"{label}: {totals[key]}" for label, key in ordered]
-    if limit is None:
-        top_variables = [name for name, _ in report.top_variables()]
-    elif limit == 0:
-        top_variables = []
+    if limit == 0:
+        top_variables = ()
     else:
-        top_variables = [name for name, _ in report.top_variables(limit)]
+        top_source = report.top_variables(None if limit is None else limit)
+        top_variables = tuple(name for name, _ in top_source)
     if top_variables:
         parts.append("Impacted: " + ", ".join(top_variables))
     return " · ".join(parts)
@@ -201,12 +200,11 @@ def _format_diff_summary(report: DiffReport, *, top_limit: int | None) -> str:
     ]
     if not parts:
         parts = [f"{label}: {summary[key]}" for label, key in ordered]
-    if limit is None:
-        top_variables = [name for name, _ in report.top_variables()]
-    elif limit == 0:
-        top_variables = []
+    if limit == 0:
+        top_variables = ()
     else:
-        top_variables = [name for name, _ in report.top_variables(limit)]
+        top_source = report.top_variables(None if limit is None else limit)
+        top_variables = tuple(name for name, _ in top_source)
     if top_variables:
         parts.append("Impacted: " + ", ".join(top_variables))
     return " · ".join(parts)
