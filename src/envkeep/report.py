@@ -52,8 +52,11 @@ class ValidationReport:
     _most_common_codes_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
     _sorted_severity_cache: dict[IssueSeverity, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
     _sorted_code_cache: dict[str, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
+    _sorted_variable_cache: dict[str, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
     _counts_by_code_cache: tuple[tuple[str, int], ...] | None = field(init=False, repr=False)
     _variables_cache: tuple[str, ...] | None = field(init=False, repr=False)
+    _warning_summary_cache: tuple[tuple[str, ...], tuple[str, ...], tuple[tuple[str, str]]] | None = field(init=False, repr=False)
+    _variables_by_severity_cache: dict[str, tuple[str, ...]] | None = field(init=False, repr=False)
     _issue_sort_key = staticmethod(
         lambda issue: (
             issue.variable.casefold(),
@@ -77,8 +80,11 @@ class ValidationReport:
         self._most_common_codes_cache = None
         self._sorted_severity_cache = {}
         self._sorted_code_cache = {}
+        self._sorted_variable_cache = {}
         self._counts_by_code_cache = None
         self._variables_cache = None
+        self._warning_summary_cache = None
+        self._variables_by_severity_cache = None
         if self.issues:
             captured = list(self.issues)
             self.issues.clear()
@@ -133,8 +139,11 @@ class ValidationReport:
         self._severity_variable_cache.pop(issue.severity, None)
         self._sorted_severity_cache.pop(issue.severity, None)
         self._sorted_code_cache.pop(issue.code, None)
+        self._sorted_variable_cache.pop(issue.variable, None)
         self._counts_by_code_cache = None
         self._variables_cache = None
+        self._warning_summary_cache = None
+        self._variables_by_severity_cache = None
         self._top_variables_cache = None
         self._most_common_codes_cache = None
 
@@ -194,16 +203,26 @@ class ValidationReport:
         return variable in self._variable_counts
 
     def issues_for(self, variable: str) -> list[ValidationIssue]:
+        cached = self._sorted_variable_cache.get(variable)
+        if cached is not None:
+            return [*cached]
         bucket = self._variable_buckets.get(variable)
         if not bucket:
+            self._sorted_variable_cache[variable] = ()
             return []
-        return [*sorted(bucket, key=self._issue_sort_key)]
+        sorted_bucket = tuple(sorted(bucket, key=self._issue_sort_key))
+        self._sorted_variable_cache[variable] = sorted_bucket
+        return [*sorted_bucket]
 
     def variables_by_severity(self) -> dict[str, list[str]]:
-        return {
-            severity.value: list(self._variables_for_severity(severity))
-            for severity in IssueSeverity
-        }
+        cached = self._variables_by_severity_cache
+        if cached is None:
+            cached = {
+                severity.value: self._variables_for_severity(severity)
+                for severity in IssueSeverity
+            }
+            self._variables_by_severity_cache = cached
+        return {key: list(values) for key, values in cached.items()}
 
     def _variables_for_severity(self, severity: IssueSeverity) -> tuple[str, ...]:
         cached = self._severity_variable_cache.get(severity)
@@ -311,25 +330,37 @@ class ValidationReport:
         return number, value
 
     def warning_summary(self) -> dict[str, Any]:
-        duplicates = self._casefold_sorted(
-            issue.variable for issue in self.issues_by_code("duplicate")
-        )
-        extras = self._casefold_sorted(
-            issue.variable for issue in self.issues_by_code("extra")
-        )
-        invalid_lines = [
-            {
-                "line": issue.variable,
-                "hint": issue.hint or issue.message,
-            }
-            for issue in self.issues_by_code("invalid_line")
-        ]
-        invalid_lines.sort(key=lambda item: self._invalid_line_sort_key(item["line"]))
+        cached = self._warning_summary_cache
+        if cached is None:
+            duplicates = tuple(
+                self._casefold_sorted(
+                    issue.variable for issue in self.issues_by_code("duplicate")
+                )
+            )
+            extras = tuple(
+                self._casefold_sorted(
+                    issue.variable for issue in self.issues_by_code("extra")
+                )
+            )
+            invalid_lines = tuple(
+                sorted(
+                    (
+                        (issue.variable, issue.hint or issue.message)
+                        for issue in self.issues_by_code("invalid_line")
+                    ),
+                    key=lambda item: self._invalid_line_sort_key(item[0]),
+                )
+            )
+            cached = self._warning_summary_cache = (duplicates, extras, invalid_lines)
+        duplicates, extras, invalid_lines = cached
         return {
             "total": self.warning_count,
-            "duplicates": duplicates,
-            "extra_variables": extras,
-            "invalid_lines": invalid_lines,
+            "duplicates": list(duplicates),
+            "extra_variables": list(extras),
+            "invalid_lines": [
+                {"line": line, "hint": hint}
+                for line, hint in invalid_lines
+            ],
         }
 
 
@@ -378,6 +409,8 @@ class DiffReport:
     _top_variables_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
     _variables_by_kind_cache: dict[str, tuple[str, ...]] | None = field(init=False, repr=False)
     _sorted_kind_cache: dict[DiffKind, tuple[DiffEntry, ...]] = field(init=False, repr=False)
+    _variables_cache: tuple[str, ...] | None = field(init=False, repr=False)
+    _sorted_entries_cache: tuple[DiffEntry, ...] | None = field(init=False, repr=False)
     _kind_order: tuple[DiffKind, ...] = (
         DiffKind.MISSING,
         DiffKind.EXTRA,
@@ -391,6 +424,8 @@ class DiffReport:
         self._top_variables_cache = None
         self._variables_by_kind_cache = None
         self._sorted_kind_cache = {}
+        self._variables_cache = None
+        self._sorted_entries_cache = None
         if self.entries:
             captured = list(self.entries)
             self.entries.clear()
@@ -414,6 +449,8 @@ class DiffReport:
         self._top_variables_cache = None
         self._variables_by_kind_cache = None
         self._sorted_kind_cache.pop(entry.kind, None)
+        self._variables_cache = None
+        self._sorted_entries_cache = None
 
     def add(self, entry: DiffEntry) -> None:
         self.entries.append(entry)
@@ -439,15 +476,22 @@ class DiffReport:
         }
 
     def sorted_entries(self) -> list[DiffEntry]:
+        cached = self._sorted_entries_cache
+        if cached is not None:
+            return [*cached]
         order = {kind: index for index, kind in enumerate(self._kind_order)}
-        return sorted(
-            self.entries,
-            key=lambda item: (
-                order[item.kind],
-                item.variable.casefold(),
-                item.variable,
-            ),
+        sorted_entries = tuple(
+            sorted(
+                self.entries,
+                key=lambda item: (
+                    order[item.kind],
+                    item.variable.casefold(),
+                    item.variable,
+                ),
+            )
         )
+        self._sorted_entries_cache = sorted_entries
+        return [*sorted_entries]
 
     def entries_by_kind(self, kind: DiffKind) -> list[DiffEntry]:
         cached = self._sorted_kind_cache.get(kind)
@@ -476,14 +520,20 @@ class DiffReport:
         return tuple(kind for kind in self._kind_order if self.has_kind(kind))
 
     def variables(self) -> tuple[str, ...]:
+        cached = self._variables_cache
+        if cached is not None:
+            return cached
         if not self._variable_counts:
+            self._variables_cache = ()
             return ()
-        return tuple(
+        computed = tuple(
             sorted(
                 self._variable_counts,
                 key=lambda name: (name.casefold(), name),
             )
         )
+        self._variables_cache = computed
+        return computed
 
     def has_variable(self, variable: str) -> bool:
         return variable in self._variable_counts
