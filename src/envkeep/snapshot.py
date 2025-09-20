@@ -8,6 +8,16 @@ from typing import Iterable
 
 _ENV_LINE_RE = re.compile(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<value>.*)$")
 
+_UNESCAPE_MAP = {
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    '"': '"',
+    "'": "'",
+    "\\": "\\",
+    "#": "#",
+}
+
 
 @dataclass(slots=True)
 class EnvSnapshot:
@@ -191,16 +201,7 @@ def _unescape(value: str) -> str:
             result.append("\\")
             break
         escape_char = value[idx]
-        mapping = {
-            "n": "\n",
-            "r": "\r",
-            "t": "\t",
-            '"': '"',
-            "'": "'",
-            "\\": "\\",
-            "#": "#",
-        }
-        replacement = mapping.get(escape_char)
+        replacement = _UNESCAPE_MAP.get(escape_char)
         if replacement is None:
             result.append("\\")
             result.append(escape_char)

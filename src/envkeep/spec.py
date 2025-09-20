@@ -8,11 +8,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
-try:  # pragma: no cover - runtime compatibility shim
-    import tomllib  # type: ignore[attr-defined]
-except ModuleNotFoundError:  # pragma: no cover - exercised in Python <3.11 test runtimes
-    import tomli as tomllib  # type: ignore[no-redef]
 from urllib.parse import urlparse
+
+from ._compat import tomllib
 
 from .report import DiffEntry, DiffKind, DiffReport, IssueSeverity, ValidationIssue, ValidationReport
 from .snapshot import EnvSnapshot
@@ -185,6 +183,8 @@ class EnvSpec:
     metadata: dict[str, Any] = field(default_factory=dict)
     _variable_cache: Mapping[str, VariableSpec] = field(init=False, repr=False)
     _profile_cache: Mapping[str, ProfileSpec] = field(init=False, repr=False)
+    _variable_names: tuple[str, ...] = field(init=False, repr=False)
+    _profile_names: tuple[str, ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._rebuild_caches()
@@ -336,10 +336,18 @@ class EnvSpec:
         return {
             "version": self.version,
             "metadata": self.metadata,
-            "variables": [spec.name for spec in self.variables],
-            "profiles": [profile.name for profile in self.profiles],
+            "variables": list(self.variable_names()),
+            "profiles": list(self.profile_names()),
         }
 
     def _rebuild_caches(self) -> None:
         self._variable_cache = MappingProxyType({variable.name: variable for variable in self.variables})
         self._profile_cache = MappingProxyType({profile.name: profile for profile in self.profiles})
+        self._variable_names = tuple(variable.name for variable in self.variables)
+        self._profile_names = tuple(profile.name for profile in self.profiles)
+
+    def variable_names(self) -> tuple[str, ...]:
+        return self._variable_names
+
+    def profile_names(self) -> tuple[str, ...]:
+        return self._profile_names

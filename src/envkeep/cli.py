@@ -3,14 +3,10 @@ from __future__ import annotations
 import json
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
-
-try:  # pragma: no cover - runtime compatibility shim
-    import tomllib  # type: ignore[attr-defined]
-except ModuleNotFoundError:  # pragma: no cover - exercised in Python <3.11 test runtimes
-    import tomli as tomllib  # type: ignore[no-redef]
 
 import warnings
 
@@ -21,6 +17,7 @@ from rich.table import Table
 from .report import DiffKind, DiffReport, IssueSeverity, ValidationIssue, ValidationReport
 from .snapshot import EnvSnapshot
 from .spec import EnvSpec
+from ._compat import tomllib
 
 try:  # pragma: no cover - Click 8.0 compatibility
     from click._utils import UNSET as _CLICK_UNSET
@@ -97,6 +94,14 @@ def _profile_option() -> typer.models.OptionInfo:
 
 def _emit_json(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2))
+
+
+def _casefold_sorted(values: Iterable[str]) -> list[str]:
+    return sorted(values, key=lambda name: (name.casefold(), name))
+
+
+def _sorted_counter(counter: Counter[str]) -> list[tuple[str, int]]:
+    return sorted(counter.items(), key=lambda item: (-item[1], item[0]))
 
 
 def _normalized_limit(limit: int | None) -> int | None:
@@ -295,8 +300,8 @@ def _emit_doctor_json(
         return int(digits) if digits else 0
 
     warnings_payload = {
-        "duplicates": sorted(aggregated_duplicates, key=str.casefold),
-        "extra_variables": sorted(aggregated_extras, key=str.casefold),
+        "duplicates": _casefold_sorted(aggregated_duplicates),
+        "extra_variables": _casefold_sorted(aggregated_extras),
         "invalid_lines": sorted(
             aggregated_invalid_lines,
             key=lambda item: (
@@ -647,18 +652,9 @@ def doctor(
             render_validation_report(report, source=str(env_path), top_limit=top_limit)
         if report.has_errors or (fail_on_warnings and report.has_warnings):
             exit_code = 1
-    aggregated_most_common_codes = sorted(
-        aggregated_codes.items(),
-        key=lambda item: (-item[1], item[0]),
-    )
-    aggregated_variables_list = sorted(
-        aggregated_variables,
-        key=lambda name: (name.casefold(), name),
-    )
-    aggregated_top_variables = sorted(
-        aggregated_variable_counts.items(),
-        key=lambda item: (-item[1], item[0]),
-    )
+    aggregated_most_common_codes = _sorted_counter(aggregated_codes)
+    aggregated_variables_list = _casefold_sorted(aggregated_variables)
+    aggregated_top_variables = _sorted_counter(aggregated_variable_counts)
     if top_limit == 0:
         aggregated_most_common_codes = []
         aggregated_top_variables = []
@@ -697,10 +693,7 @@ def doctor(
             f"Invalid lines: {aggregate_warning_counts['invalid_lines']}"
         )
         if aggregate_issue_variables and top_limit != 0:
-            sorted_variables = sorted(
-                aggregate_issue_variables,
-                key=lambda name: (name.casefold(), name),
-            )
+            sorted_variables = _casefold_sorted(aggregate_issue_variables)
             console.print(
                 "Impacted variables: "
                 + ", ".join(sorted_variables[:top_limit])
@@ -721,8 +714,8 @@ def doctor(
 
 
 def _summarize_warnings(report: ValidationReport) -> dict[str, Any]:
-    duplicates = sorted({issue.variable for issue in report.issues_by_code("duplicate")}, key=str.casefold)
-    extras = sorted({issue.variable for issue in report.issues_by_code("extra")}, key=str.casefold)
+    duplicates = _casefold_sorted({issue.variable for issue in report.issues_by_code("duplicate")})
+    extras = _casefold_sorted({issue.variable for issue in report.issues_by_code("extra")})
 
     def _line_payload(issue: ValidationIssue) -> dict[str, Any]:
         return {"line": issue.variable, "hint": issue.hint or issue.message}
