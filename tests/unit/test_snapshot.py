@@ -15,7 +15,7 @@ def test_env_snapshot_parses_comments(tmp_path: Path) -> None:
             API_URL=https://example.com # trailing comment
             QUOTED="value with spaces"
             MULTI=foo\\nbar
-            """
+            """,
         ),
         encoding="utf-8",
     )
@@ -35,7 +35,7 @@ def test_env_snapshot_supports_export_and_preserves_escapes(tmp_path: Path) -> N
             export SECRET="override"
             PLAIN=value
             MALFORMED
-            """
+            """,
         ),
         encoding="utf-8",
     )
@@ -56,7 +56,7 @@ def test_env_snapshot_duplicate_keys_preserve_order(tmp_path: Path) -> None:
             FIRST=3
             SECOND=4
             THIRD=5
-            """
+            """,
         ),
         encoding="utf-8",
     )
@@ -71,7 +71,7 @@ def test_env_snapshot_respects_escaped_hash_and_quotes() -> None:
         ESCAPED=foo\#bar
         DOUBLE="value with \"quotes\" inside"
         SINGLE='value with \# hash and spaces'
-        """
+        """,
     )
     snapshot = EnvSnapshot.from_text(raw)
     assert snapshot.get("QUOTED") == "value # not a comment"
@@ -85,7 +85,7 @@ def test_env_snapshot_marks_unterminated_quotes_invalid() -> None:
         """\
         BROKEN="unterminated value
         VALID=value
-        """
+        """,
     )
     snapshot = EnvSnapshot.from_text(raw)
     assert snapshot.get("VALID") == "value"

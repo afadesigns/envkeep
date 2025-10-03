@@ -3,6 +3,9 @@
 All notable changes to Envkeep will be documented here.
 
 ## [Unreleased]
+_No unreleased changes yet._
+
+## [1.0.0] - 2025-10-03
 ### Added
 - Allowed specs to be streamed from stdin across CLI commands via `--spec -` with guardrails against duplicate stdin consumption.
 - Added JSON output for `envkeep inspect` so automation can consume variable and profile metadata.
@@ -23,6 +26,7 @@ All notable changes to Envkeep will be documented here.
 ### Documentation
 - Clarified how to escape `#` characters and quotes in `.env` files within the getting started guide.
 - Refreshed governance, conduct, and support docs with the new maintainer contact paths.
+
 
 ## [0.1.0] - 2025-09-19
 ### Added

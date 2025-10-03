@@ -15,10 +15,14 @@ from envkeep.report import (
 def test_validation_report_summary_counts() -> None:
     report = ValidationReport(
         issues=[
-            ValidationIssue(variable="A", message="boom", severity=IssueSeverity.ERROR, code="missing"),
-            ValidationIssue(variable="B", message="warn", severity=IssueSeverity.WARNING, code="extra"),
+            ValidationIssue(
+                variable="A", message="boom", severity=IssueSeverity.ERROR, code="missing",
+            ),
+            ValidationIssue(
+                variable="B", message="warn", severity=IssueSeverity.WARNING, code="extra",
+            ),
             ValidationIssue(variable="C", message="info", severity=IssueSeverity.INFO, code="note"),
-        ]
+        ],
     )
     summary = report.summary()
     assert summary["severity_totals"][IssueSeverity.ERROR.value] == 1
@@ -110,7 +114,7 @@ def test_diff_report_summary_counts() -> None:
             DiffEntry(variable="A", kind=DiffKind.EXTRA, left=None, right="1", secret=False),
             DiffEntry(variable="B", kind=DiffKind.MISSING, left="1", right=None, secret=False),
             DiffEntry(variable="C", kind=DiffKind.CHANGED, left="1", right="2", secret=False),
-        ]
+        ],
     )
     summary = report.summary()
     assert summary["change_count"] == 3
@@ -177,7 +181,7 @@ def test_validation_report_counters_update_incrementally() -> None:
             message="missing",
             severity=IssueSeverity.ERROR,
             code="missing",
-        )
+        ),
     )
     report.extend(
         ValidationIssue(
@@ -244,7 +248,7 @@ def test_validation_report_warning_summary_orders_outputs() -> None:
                 code="invalid_line",
                 hint="line 2 message",
             ),
-        ]
+        ],
     )
     summary = report.warning_summary()
     assert summary["total"] == 7
@@ -261,7 +265,7 @@ def test_diff_report_sorted_entries_orders_by_kind_then_name() -> None:
             DiffEntry(variable="B", kind=DiffKind.CHANGED, left="1", right="2", secret=False),
             DiffEntry(variable="A", kind=DiffKind.EXTRA, left=None, right="1", secret=False),
             DiffEntry(variable="C", kind=DiffKind.MISSING, left="1", right=None, secret=False),
-        ]
+        ],
     )
     ordered = report.sorted_entries()
     assert [entry.kind for entry in ordered] == [
@@ -275,7 +279,9 @@ def test_diff_report_sorted_entries_orders_by_kind_then_name() -> None:
 def test_validation_report_most_common_codes_limit() -> None:
     report = ValidationReport()
     entries = [
-        ValidationIssue(variable=f"VAR_{idx}", message="warn", severity=IssueSeverity.WARNING, code="extra")
+        ValidationIssue(
+            variable=f"VAR_{idx}", message="warn", severity=IssueSeverity.WARNING, code="extra",
+        )
         for idx in range(3)
     ]
     report.extend(entries)
@@ -285,7 +291,7 @@ def test_validation_report_most_common_codes_limit() -> None:
             message="duplicate",
             severity=IssueSeverity.WARNING,
             code="duplicate",
-        )
+        ),
     )
     assert report.most_common_codes(limit=1) == [("extra", 3)]
 
@@ -332,7 +338,7 @@ def test_validation_report_warning_summary_orders_entries() -> None:
                 code="invalid_line",
                 hint="missing equals",
             ),
-        ]
+        ],
     )
     summary = report.warning_summary()
     assert summary["total"] == report.warning_count == 6
@@ -347,10 +353,16 @@ def test_validation_report_warning_summary_orders_entries() -> None:
 def test_validation_report_views_are_copy_on_read() -> None:
     report = ValidationReport(
         issues=[
-            ValidationIssue(variable="A", message="missing", severity=IssueSeverity.ERROR, code="missing"),
-            ValidationIssue(variable="B", message="dup", severity=IssueSeverity.WARNING, code="duplicate"),
-            ValidationIssue(variable="C", message="warn", severity=IssueSeverity.WARNING, code="extra"),
-        ]
+            ValidationIssue(
+                variable="A", message="missing", severity=IssueSeverity.ERROR, code="missing",
+            ),
+            ValidationIssue(
+                variable="B", message="dup", severity=IssueSeverity.WARNING, code="duplicate",
+            ),
+            ValidationIssue(
+                variable="C", message="warn", severity=IssueSeverity.WARNING, code="extra",
+            ),
+        ],
     )
     top = report.top_variables()
     top.append(("Z", 99))
@@ -367,7 +379,7 @@ def test_diff_report_views_are_copy_on_read() -> None:
         entries=[
             DiffEntry(variable="FOO", kind=DiffKind.EXTRA, left=None, right="1", secret=False),
             DiffEntry(variable="BAR", kind=DiffKind.MISSING, left="1", right=None, secret=False),
-        ]
+        ],
     )
     tops = report.top_variables()
     tops.append(("BAZ", 5))
@@ -377,7 +389,7 @@ def test_diff_report_views_are_copy_on_read() -> None:
     assert "QUX" not in report.variables_by_kind()[DiffKind.EXTRA.value]
     entries = report.entries_by_kind(DiffKind.EXTRA)
     entries.append(
-        DiffEntry(variable="NEW", kind=DiffKind.EXTRA, left=None, right="2", secret=False)
+        DiffEntry(variable="NEW", kind=DiffKind.EXTRA, left=None, right="2", secret=False),
     )
     assert all(entry.variable != "NEW" for entry in report.entries_by_kind(DiffKind.EXTRA))
 
@@ -385,9 +397,13 @@ def test_diff_report_views_are_copy_on_read() -> None:
 def test_counts_by_code_is_read_only() -> None:
     report = ValidationReport(
         issues=[
-            ValidationIssue(variable="A", message="boom", severity=IssueSeverity.ERROR, code="missing"),
-            ValidationIssue(variable="B", message="warn", severity=IssueSeverity.WARNING, code="extra"),
-        ]
+            ValidationIssue(
+                variable="A", message="boom", severity=IssueSeverity.ERROR, code="missing",
+            ),
+            ValidationIssue(
+                variable="B", message="warn", severity=IssueSeverity.WARNING, code="extra",
+            ),
+        ],
     )
     mapping = report.counts_by_code()
     assert mapping["extra"] == 1
@@ -399,7 +415,7 @@ def test_counts_by_kind_is_read_only() -> None:
     report = DiffReport(
         entries=[
             DiffEntry(variable="A", kind=DiffKind.EXTRA, left=None, right="1", secret=False),
-        ]
+        ],
     )
     mapping = report.counts_by_kind()
     assert mapping[DiffKind.EXTRA.value] == 1

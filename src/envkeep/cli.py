@@ -4,10 +4,9 @@ import json
 import sys
 import warnings
 from collections import Counter
-from collections.abc import Iterable
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import typer
 from rich.console import Console
@@ -27,7 +26,7 @@ from .utils import (
 )
 
 try:  # pragma: no cover - Click 8.0 compatibility
-    from click._utils import UNSET as _CLICK_UNSET
+    from click._utils import UNSET as _CLICK_UNSET  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
     _CLICK_UNSET = None
 
@@ -40,6 +39,10 @@ if _CLICK_UNSET is None:  # pragma: no cover - Typer >=0.12 on newer Click versi
 
 app = typer.Typer(help="Deterministic environment spec and drift detection for .env workflows.")
 console = Console()
+DEFAULT_SPEC_PATH = Path("envkeep.toml")
+DEFAULT_OUTPUT_FORMAT = "text"
+DEFAULT_PROFILE = "all"
+
 
 class OutputFormat(str, Enum):
     TEXT = "text"
@@ -54,13 +57,17 @@ def _parse_output_format(value: OutputFormat | str) -> OutputFormat:
     except ValueError as exc:
         allowed = ", ".join(fmt.value for fmt in OutputFormat)
         raise typer.BadParameter(
-            f"Invalid value for '--format': output format must be one of: {allowed}"
+            f"Invalid value for '--format': output format must be one of: {allowed}",
         ) from exc
 
 
 def _option_with_value(*args: Any, **kwargs: Any) -> typer.models.OptionInfo:
-    option = typer.Option(*args, **kwargs)
-    if _CLICK_UNSET is not None:
+    option = cast(typer.models.OptionInfo, typer.Option(*args, **kwargs))
+    if option.param_decls:
+        option.param_decls = tuple(decl for decl in option.param_decls if isinstance(decl, str))
+    else:
+        option.param_decls = ()
+    if _CLICK_UNSET is not None and hasattr(option, "flag_value"):
         option.flag_value = _CLICK_UNSET  # Click <8.1 treats flag_value=None as a boolean flag
     return option
 
@@ -72,16 +79,17 @@ def _coerce_output_format(raw: str) -> OutputFormat:
         typer.echo(str(exc))
         raise typer.Exit(code=2) from exc
 
-SPEC_OPTION = _option_with_value(Path("envkeep.toml"), "--spec", "-s", help="Path to envkeep spec.")
+
+SPEC_OPTION = _option_with_value(DEFAULT_SPEC_PATH, "--spec", "-s", help="Path to envkeep spec.")
 FORMAT_OPTION = _option_with_value(
-    "text",
+    DEFAULT_OUTPUT_FORMAT,
     "--format",
     "-f",
     help="Output format: text or json.",
 )
 FORMAT_OPTION.case_sensitive = False
 PROFILE_OPTION = _option_with_value(
-    "all",
+    DEFAULT_PROFILE,
     "--profile",
     "-p",
     help="Profile to validate (all to run every profile).",
@@ -101,6 +109,12 @@ GENERATE_OUTPUT_OPTION = _option_with_value(
 ENV_FILE_ARGUMENT = typer.Argument(..., help="Path to the environment file.")
 DIFF_FIRST_ARGUMENT = typer.Argument(..., help="Baseline environment file.")
 DIFF_SECOND_ARGUMENT = typer.Argument(..., help="Target environment file.")
+
+SPEC_OPTION_DEFAULT = cast(Path, SPEC_OPTION)
+FORMAT_OPTION_DEFAULT = cast(str, FORMAT_OPTION)
+PROFILE_OPTION_DEFAULT = cast(str, PROFILE_OPTION)
+PROFILE_BASE_OPTION_DEFAULT = cast(OptionalPath, PROFILE_BASE_OPTION)
+GENERATE_OUTPUT_OPTION_DEFAULT = cast(OptionalPath, GENERATE_OUTPUT_OPTION)
 
 
 def _emit_json(payload: Any) -> None:
@@ -142,6 +156,8 @@ def _resolve_profile_base_dir(profile_base: Path | None, *, default_base: Path) 
     if not candidate.is_dir():
         raise typer.BadParameter(f"profile base '{candidate}' is not a directory")
     return candidate.resolve()
+
+
 def _usage_error(message: str) -> None:
     """Emit a usage error to stderr and exit with the conventional code."""
 
@@ -200,13 +216,10 @@ def _format_severity_summary(report: ValidationReport, *, top_limit: int | None)
         ("Warnings", IssueSeverity.WARNING.value),
         ("Info", IssueSeverity.INFO.value),
     ]
-    parts = [
-        f"{label}: {totals[key]}"
-        for label, key in ordered
-        if totals[key] > 0
-    ]
+    parts = [f"{label}: {totals[key]}" for label, key in ordered if totals[key] > 0]
     if not parts:
         parts = [f"{label}: {totals[key]}" for label, key in ordered]
+    top_variables: tuple[str, ...]
     if limit == 0:
         top_variables = ()
     else:
@@ -225,13 +238,10 @@ def _format_diff_summary(report: DiffReport, *, top_limit: int | None) -> str:
         ("Extra", DiffKind.EXTRA.value),
         ("Changed", DiffKind.CHANGED.value),
     ]
-    parts = [
-        f"{label}: {summary[key]}"
-        for label, key in ordered
-        if summary[key] > 0
-    ]
+    parts = [f"{label}: {summary[key]}" for label, key in ordered if summary[key] > 0]
     if not parts:
         parts = [f"{label}: {summary[key]}" for label, key in ordered]
+    top_variables: tuple[str, ...]
     if limit == 0:
         top_variables = ()
     else:
@@ -280,11 +290,7 @@ def _emit_doctor_json(
                     aggregated_invalid_lines.append(warning)
                 else:
                     aggregated_invalid_lines.append({**warning, "profile": profile})
-    non_empty_severities = [
-        key
-        for key, value in severity_totals.items()
-        if value > 0
-    ]
+    non_empty_severities = [key for key, value in severity_totals.items() if value > 0]
     if not non_empty_severities:
         non_empty_severities = list(severity_totals.keys())
     summary_payload = {
@@ -349,8 +355,8 @@ def load_spec(path: Path, *, stdin_data: str | None = None) -> EnvSpec:
 @app.command()
 def check(
     env_file: Path = ENV_FILE_ARGUMENT,
-    spec: Path = SPEC_OPTION,
-    output_format: str = FORMAT_OPTION,
+    spec: Path = SPEC_OPTION_DEFAULT,
+    output_format: str = FORMAT_OPTION_DEFAULT,
     allow_extra: bool = typer.Option(
         False,
         "--allow-extra",
@@ -402,8 +408,8 @@ def check(
 def diff(
     first: Path = DIFF_FIRST_ARGUMENT,
     second: Path = DIFF_SECOND_ARGUMENT,
-    spec: Path = SPEC_OPTION,
-    output_format: str = FORMAT_OPTION,
+    spec: Path = SPEC_OPTION_DEFAULT,
+    output_format: str = FORMAT_OPTION_DEFAULT,
     summary_top: int = typer.Option(
         3,
         "--summary-top",
@@ -448,8 +454,8 @@ def diff(
 
 @app.command()
 def generate(
-    spec: Path = SPEC_OPTION,
-    output: OptionalPath = GENERATE_OUTPUT_OPTION,
+    spec: Path = SPEC_OPTION_DEFAULT,
+    output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
     no_redact_secrets: bool = typer.Option(
         False,
         "--no-redact-secrets",
@@ -473,9 +479,9 @@ def generate(
 
 @app.command()
 def inspect(
-    spec: Path = SPEC_OPTION,
-    output_format: str = FORMAT_OPTION,
-    profile_base: str = PROFILE_BASE_OPTION,
+    spec: Path = SPEC_OPTION_DEFAULT,
+    output_format: str = FORMAT_OPTION_DEFAULT,
+    profile_base: OptionalPath = PROFILE_BASE_OPTION_DEFAULT,
 ) -> None:
     """Print a summary of variables and profiles declared in the spec."""
 
@@ -504,7 +510,8 @@ def inspect(
         profiles_payload = []
         for profile in env_spec.profiles:
             resolved_path = _resolve_profile_path(
-                profile.env_file, base_dir=profile_base_dir
+                profile.env_file,
+                base_dir=profile_base_dir,
             )
             profiles_payload.append(
                 {
@@ -512,7 +519,7 @@ def inspect(
                     "env_file": profile.env_file,
                     "resolved_env_file": str(resolved_path),
                     "description": profile.description,
-                }
+                },
             )
         payload = {
             "summary": env_spec.summary(),
@@ -541,7 +548,8 @@ def inspect(
         table.add_row("Profiles", "", "", "", "")
         for profile in env_spec.profiles:
             resolved_path = _resolve_profile_path(
-                profile.env_file, base_dir=profile_base_dir
+                profile.env_file,
+                base_dir=profile_base_dir,
             )
             descriptor = profile.description or profile.env_file
             if descriptor:
@@ -560,8 +568,10 @@ def inspect(
 
 @app.command()
 def doctor(
-    spec: Path = SPEC_OPTION,
-    profile: str = PROFILE_OPTION,
+    spec: Path = SPEC_OPTION_DEFAULT,
+    profile: str = PROFILE_OPTION_DEFAULT,
+    output_format: str = FORMAT_OPTION_DEFAULT,
+    profile_base: OptionalPath = PROFILE_BASE_OPTION_DEFAULT,
     allow_extra: bool = typer.Option(
         False,
         "--allow-extra",
@@ -569,7 +579,6 @@ def doctor(
         is_flag=True,
         flag_value=True,
     ),
-    output_format: str = FORMAT_OPTION,
     fail_on_warnings: bool = typer.Option(
         False,
         "--fail-on-warnings",
@@ -582,7 +591,6 @@ def doctor(
         "--summary-top",
         help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
     ),
-    profile_base: str = PROFILE_BASE_OPTION,
 ) -> None:
     """Validate one or more profiles declared in the spec."""
 
@@ -643,13 +651,15 @@ def doctor(
         if not exists:
             missing_profiles += 1
             if use_json:
-                results.append({
-                    "profile": name,
-                    "env_file": env_file_raw,
-                    "resolved_env_file": str(env_path),
-                    "path": str(env_path),
-                    "error": "missing env file",
-                })
+                results.append(
+                    {
+                        "profile": name,
+                        "env_file": env_file_raw,
+                        "resolved_env_file": str(env_path),
+                        "path": str(env_path),
+                        "error": "missing env file",
+                    },
+                )
             else:
                 typer.echo(f"Profile {name}: missing env file {env_path}")
             exit_code = 1
@@ -674,15 +684,17 @@ def doctor(
         if use_json:
             summary = report.summary(top_limit=top_limit)
             report_payload = report.to_dict(top_limit=top_limit)
-            results.append({
-                "profile": name,
-                "env_file": env_file_raw,
-                "resolved_env_file": str(env_path),
-                "path": str(env_path),
-                "report": report_payload,
-                "summary": summary,
-                "warnings": warnings_summary,
-            })
+            results.append(
+                {
+                    "profile": name,
+                    "env_file": env_file_raw,
+                    "resolved_env_file": str(env_path),
+                    "path": str(env_path),
+                    "report": report_payload,
+                    "summary": summary,
+                    "warnings": warnings_summary,
+                },
+            )
         else:
             console.rule(f"Profile: {name}")
             render_validation_report(report, source=str(env_path), top_limit=top_limit)
@@ -711,7 +723,7 @@ def doctor(
     else:
         console.rule("Doctor Summary")
         console.print(
-            f"Profiles checked: {checked_profiles}/{len(selected_profiles)}"
+            f"Profiles checked: {checked_profiles}/{len(selected_profiles)}",
         )
         console.print(
             " · ".join(
@@ -720,32 +732,29 @@ def doctor(
                     f"Total errors: {total_errors}",
                     f"Total warnings: {total_warnings}",
                     f"Total info: {total_info}",
-                ]
-            )
+                ],
+            ),
         )
         console.print(
             "Warnings breakdown: "
             f"Duplicates: {aggregate_warning_counts['duplicates']} · "
             f"Extra variables: {aggregate_warning_counts['extra_variables']} · "
-            f"Invalid lines: {aggregate_warning_counts['invalid_lines']}"
+            f"Invalid lines: {aggregate_warning_counts['invalid_lines']}",
         )
         if aggregate_issue_variables and top_limit != 0:
             sorted_variables = casefold_sorted(aggregate_issue_variables)
             display_count = min(len(sorted_variables), top_limit)
             console.print(
-                "Impacted variables: "
-                + ", ".join(sorted_variables[:display_count])
+                "Impacted variables: " + ", ".join(sorted_variables[:display_count]),
             )
         if aggregated_most_common_codes:
             formatted_codes = ", ".join(
-                f"{code}({count})"
-                for code, count in aggregated_most_common_codes
+                f"{code}({count})" for code, count in aggregated_most_common_codes
             )
             console.print(f"Top issue codes: {formatted_codes}")
         if aggregated_top_variables and top_limit != 0:
             formatted_variables = ", ".join(
-                f"{variable}({count})"
-                for variable, count in aggregated_top_variables
+                f"{variable}({count})" for variable, count in aggregated_top_variables
             )
             console.print(f"Top impacted variables: {formatted_variables}")
         if resolved_profile_records:
@@ -753,9 +762,10 @@ def doctor(
             for name, env_file_raw, resolved_path, exists in resolved_profile_records:
                 status = "" if exists else " (missing)"
                 console.print(
-                    f"  • {name}: {env_file_raw} -> {resolved_path}{status}"
+                    f"  • {name}: {env_file_raw} -> {resolved_path}{status}",
                 )
     raise typer.Exit(code=exit_code)
+
 
 def render_validation_report(
     report: ValidationReport,

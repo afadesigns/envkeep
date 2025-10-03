@@ -86,7 +86,7 @@ See [ROADMAP.md](ROADMAP.md) for the full backlog.
 
 **Can I load from `os.environ` instead of files?** Yes, use `EnvSnapshot.from_process()`.
 
-**Does Envkeep support YAML specs?** Not yet. TOML keeps dependencies minimal in v0.1.
+**Does Envkeep support YAML specs?** Not yet. TOML keeps dependencies minimal in v1.0.
 
 **Will it slow down CI?** Validation of 500 variables completes in under 120 ms on a 2022 developer laptop (benchmarked via `pytest --benchmark-only`).
 
@@ -97,7 +97,7 @@ See [ROADMAP.md](ROADMAP.md) for the full backlog.
 4. Review [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Launch and Growth Plan
-- Launch Day: publish v0.1.0 on PyPI, post to r/Python, Hacker News (Show HN), Dev.to, and LinkedIn with demo clips.
+- Launch Day: publish v1.0.0 on PyPI, post to r/Python, Hacker News (Show HN), Dev.to, and LinkedIn with demo clips.
 - Discoverability: add GitHub topics (`dotenv`, `configuration`, `devops`, `sre`, `python`, `security`, `cli`, `typed-settings`, `ci`, `workflow`).
 - Community: seed “good first issue” tasks (spec lint rules, editor integrations) and open GitHub Discussions for Q&A.
 - Credibility: publish benchmarks, migration guide, and testimonials from early adopters in docs.

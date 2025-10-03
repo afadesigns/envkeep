@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from .utils import strip_bom
 
@@ -38,7 +38,7 @@ class EnvSnapshot:
         source: str = "mapping",
         duplicates: Iterable[str] | None = None,
         invalid_lines: Iterable[tuple[int, str]] | None = None,
-    ) -> "EnvSnapshot":
+    ) -> EnvSnapshot:
         return cls(
             values=dict(mapping),
             source=source,
@@ -47,11 +47,11 @@ class EnvSnapshot:
         )
 
     @classmethod
-    def from_process(cls) -> "EnvSnapshot":
+    def from_process(cls) -> EnvSnapshot:
         return cls.from_mapping(dict(os.environ), source="process")
 
     @classmethod
-    def from_env_file(cls, path: str | Path) -> "EnvSnapshot":
+    def from_env_file(cls, path: str | Path) -> EnvSnapshot:
         path_obj = Path(path)
         content = path_obj.read_text(encoding="utf-8")
         values, duplicates, invalid_lines = _parse_env(content)
@@ -63,7 +63,7 @@ class EnvSnapshot:
         )
 
     @classmethod
-    def from_text(cls, raw: str, *, source: str = "<inline>") -> "EnvSnapshot":
+    def from_text(cls, raw: str, *, source: str = "<inline>") -> EnvSnapshot:
         values, duplicates, invalid_lines = _parse_env(raw)
         return cls(
             values=values,

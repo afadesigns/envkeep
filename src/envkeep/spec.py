@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping
-
+from typing import Any
 from urllib.parse import urlparse
 
 from ._compat import tomllib
-
-from .report import DiffEntry, DiffKind, DiffReport, IssueSeverity, ValidationIssue, ValidationReport
+from .report import (
+    DiffEntry,
+    DiffKind,
+    DiffReport,
+    IssueSeverity,
+    ValidationIssue,
+    ValidationReport,
+)
 from .snapshot import EnvSnapshot
 from .utils import casefold_sorted
 
@@ -28,6 +34,7 @@ def _assert_unique(values: Iterable[str], *, entity: str) -> None:
     if duplicates:
         joined = ", ".join(dict.fromkeys(duplicates))
         raise ValueError(f"duplicate {entity} declared: {joined}")
+
 
 _BOOL_TRUE = {"1", "true", "on", "yes"}
 _BOOL_FALSE = {"0", "false", "off", "no"}
@@ -93,7 +100,7 @@ class VariableType(str, Enum):
             return '{"key": "value"}'
         if self is VariableType.LIST:
             return "value1,value2"
-        return "value"
+        raise ValueError(f"unhandled variable type: {self.value}")
 
 
 @dataclass(slots=True)
@@ -110,7 +117,7 @@ class VariableSpec:
     allow_empty: bool = False
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "VariableSpec":
+    def from_dict(cls, data: dict[str, Any]) -> VariableSpec:
         name = data["name"]
         var_type = VariableType(data.get("type", "string"))
         pattern_value = data.get("pattern")
@@ -168,7 +175,7 @@ class ProfileSpec:
     description: str | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ProfileSpec":
+    def from_dict(cls, data: dict[str, Any]) -> ProfileSpec:
         return cls(
             name=data["name"],
             env_file=data["env_file"],
@@ -191,13 +198,13 @@ class EnvSpec:
         self._rebuild_caches()
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "EnvSpec":
+    def from_file(cls, path: str | Path) -> EnvSpec:
         path_obj = Path(path)
         data = tomllib.loads(path_obj.read_text(encoding="utf-8"))
         return cls.from_dict(data)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "EnvSpec":
+    def from_dict(cls, data: dict[str, Any]) -> EnvSpec:
         version = int(data.get("version", 1))
         metadata = data.get("metadata", {})
         variables_data = data.get("variables", [])
@@ -226,7 +233,7 @@ class EnvSpec:
                         severity=IssueSeverity.ERROR,
                         code="missing",
                         hint="Declare it in the environment or provide a default.",
-                    )
+                    ),
                 )
                 continue
             try:
@@ -238,7 +245,7 @@ class EnvSpec:
                         message=str(exc),
                         severity=IssueSeverity.ERROR,
                         code="invalid",
-                    )
+                    ),
                 )
         if not allow_extra:
             extras = [key for key in snapshot.keys() if key not in variables]
@@ -250,7 +257,7 @@ class EnvSpec:
                         severity=IssueSeverity.WARNING,
                         code="extra",
                         hint="Add it to envkeep.toml or remove it from the environment.",
-                    )
+                    ),
                 )
         for key in snapshot.duplicate_keys():
             report.add(
@@ -260,7 +267,7 @@ class EnvSpec:
                     severity=IssueSeverity.WARNING,
                     code="duplicate",
                     hint="Remove duplicate assignments to keep configuration deterministic.",
-                )
+                ),
             )
         for line_no, raw in snapshot.malformed_lines():
             report.add(
@@ -270,7 +277,7 @@ class EnvSpec:
                     severity=IssueSeverity.WARNING,
                     code="invalid_line",
                     hint=f"Review the syntax: {raw}",
-                )
+                ),
             )
         return report
 
@@ -282,19 +289,44 @@ class EnvSpec:
             right_val = right.get(name)
             if left_val is None and right_val is None:
                 continue
-            if left_val is None and right_val is not None:
-                report.add(DiffEntry(variable=name, kind=DiffKind.EXTRA, left=None, right=spec.normalize(right_val), secret=spec.secret))
+            if left_val is None:
+                if right_val is None:
+                    continue
+                report.add(
+                    DiffEntry(
+                        variable=name,
+                        kind=DiffKind.EXTRA,
+                        left=None,
+                        right=spec.normalize(right_val),
+                        secret=spec.secret,
+                    ),
+                )
                 continue
-            if left_val is not None and right_val is None:
-                report.add(DiffEntry(variable=name, kind=DiffKind.MISSING, left=spec.normalize(left_val), right=None, secret=spec.secret))
+            if right_val is None:
+                report.add(
+                    DiffEntry(
+                        variable=name,
+                        kind=DiffKind.MISSING,
+                        left=spec.normalize(left_val),
+                        right=None,
+                        secret=spec.secret,
+                    ),
+                )
                 continue
-            assert left_val is not None and right_val is not None
             try:
                 left_normalized = spec.normalize(left_val)
                 right_normalized = spec.normalize(right_val)
             except ValueError:
-                # Treat normalization errors as changed values without exposing raw data for secrets.
-                report.add(DiffEntry(variable=name, kind=DiffKind.CHANGED, left=left_val, right=right_val, secret=spec.secret))
+                # Treat normalization errors as changes without exposing raw secret material.
+                report.add(
+                    DiffEntry(
+                        variable=name,
+                        kind=DiffKind.CHANGED,
+                        left=left_val,
+                        right=right_val,
+                        secret=spec.secret,
+                    ),
+                )
                 continue
             if left_normalized != right_normalized:
                 report.add(
@@ -304,14 +336,30 @@ class EnvSpec:
                         left=left_normalized,
                         right=right_normalized,
                         secret=spec.secret,
-                    )
+                    ),
                 )
         left_extra = set(left.keys()) - variables.keys()
         right_extra = set(right.keys()) - variables.keys()
         for key in casefold_sorted(left_extra):
-            report.add(DiffEntry(variable=key, kind=DiffKind.MISSING, left=left.get(key), right=None, secret=False))
+            report.add(
+                DiffEntry(
+                    variable=key,
+                    kind=DiffKind.MISSING,
+                    left=left.get(key),
+                    right=None,
+                    secret=False,
+                ),
+            )
         for key in casefold_sorted(right_extra):
-            report.add(DiffEntry(variable=key, kind=DiffKind.EXTRA, left=None, right=right.get(key), secret=False))
+            report.add(
+                DiffEntry(
+                    variable=key,
+                    kind=DiffKind.EXTRA,
+                    left=None,
+                    right=right.get(key),
+                    secret=False,
+                ),
+            )
         return report
 
     def generate_example(self, *, redact_secrets: bool = True) -> str:
@@ -342,7 +390,9 @@ class EnvSpec:
         }
 
     def _rebuild_caches(self) -> None:
-        self._variable_cache = MappingProxyType({variable.name: variable for variable in self.variables})
+        self._variable_cache = MappingProxyType(
+            {variable.name: variable for variable in self.variables},
+        )
         self._profile_cache = MappingProxyType({profile.name: profile for profile in self.profiles})
         self._variable_names = tuple(variable.name for variable in self.variables)
         self._profile_names = tuple(profile.name for profile in self.profiles)

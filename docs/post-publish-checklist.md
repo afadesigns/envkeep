@@ -7,7 +7,7 @@
    - GitHub Actions composite action (#3)
 3. Enable GitHub Discussions and pin welcome message.
 4. Configure Dependabot security and version updates (already committed in `.github/dependabot.yml`).
-5. Cut tag `v0.1.0` and publish initial GitHub Release with changelog excerpt.
+5. Cut tag `v1.0.0` and publish initial GitHub Release with changelog excerpt.
 6. Publish documentation site using GitHub Pages (MkDocs `gh-deploy`).
 7. Launch announcements:
    - r/Python showcase with demo GIF

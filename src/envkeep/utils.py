@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-"""Shared helper utilities for envkeep modules."""
-
+# Shared helper utilities for envkeep modules.
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -12,9 +11,7 @@ import typer
 BOM = "\ufeff"
 
 if TYPE_CHECKING:  # pragma: no cover - typing shim for Typer runtime compatibility
-    from typing import Optional as _Optional
-
-    OptionalPath = _Optional[Path]
+    OptionalPath = Path | None
 else:  # pragma: no cover - Typer inspects runtime annotations
     OptionalPath = Path
 

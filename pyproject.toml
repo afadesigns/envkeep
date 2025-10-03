@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "envkeep"
-version = "0.1.0"
+version = "1.0.0"
 description = "Typed environment specification, drift detection, and CLI tooling for .env-centric teams."
 readme = "README.md"
 requires-python = ">=3.11"

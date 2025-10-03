@@ -24,3 +24,7 @@ benchmarks/.benchmarks/
 .eggs/
 # MkDocs
 /site/
+
+# Allow checked-in fixtures for documentation/tests
+!examples/basic/.env.dev
+!examples/basic/.env.prod

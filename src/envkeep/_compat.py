@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-try:  # pragma: no cover - runtime compatibility shim
-    import tomllib as _tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
-    import tomli as _tomllib  # type: ignore[import-not-found]
+from importlib import import_module
+from types import ModuleType
 
-# Re-export for modules that need a tomllib-compatible loader.
-tomllib = _tomllib
+try:  # pragma: no cover - prefer stdlib tomllib when available
+    tomllib: ModuleType = import_module("tomllib")
+except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
+    tomllib = import_module("tomli")
 
 __all__ = ["tomllib"]

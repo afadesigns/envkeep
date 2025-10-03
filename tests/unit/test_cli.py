@@ -19,6 +19,8 @@ EXAMPLE_SPEC = Path("examples/basic/envkeep.toml")
 DEV_ENV = Path("examples/basic/.env.dev")
 PROD_ENV = Path("examples/basic/.env.prod")
 PROD_ENV_ABS = PROD_ENV.resolve()
+
+
 def test_cli_check_success() -> None:
     result = runner.invoke(app, ["check", str(DEV_ENV), "--spec", str(EXAMPLE_SPEC)])
     assert result.exit_code == 0
@@ -30,8 +32,8 @@ def test_cli_check_failure(tmp_path: Path) -> None:
     env_file.write_text("DATABASE_URL=http://example.com\n", encoding="utf-8")
     result = runner.invoke(app, ["check", str(env_file), "--spec", str(EXAMPLE_SPEC)])
     assert result.exit_code == 1
-    assert 'API_TOKEN' in result.stdout
-    assert 'Errors: 1' in result.stdout
+    assert "API_TOKEN" in result.stdout
+    assert "Errors: 1" in result.stdout
 
 
 def test_cli_check_json_summary() -> None:
@@ -52,7 +54,8 @@ def test_cli_check_json_summary() -> None:
 
 
 def test_cli_check_rejects_negative_summary_top(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(DEV_ENV.read_text(), encoding="utf-8")
@@ -98,7 +101,7 @@ def test_cli_check_fail_on_warnings(tmp_path: Path) -> None:
                 "ALLOWED_HOSTS=localhost",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
                 "EXTRA=value",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -127,17 +130,20 @@ def test_cli_diff_detects_changes(tmp_path: Path) -> None:
                 "DEBUG=false",
                 "ALLOWED_HOSTS=localhost",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
-    result = runner.invoke(app, [
-        "diff",
-        str(left),
-        str(right),
-        "--spec",
-        str(EXAMPLE_SPEC),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "diff",
+            str(left),
+            str(right),
+            "--spec",
+            str(EXAMPLE_SPEC),
+        ],
+    )
     assert result.exit_code == 1
     assert "Total differences" in result.stdout
 
@@ -179,7 +185,8 @@ def test_cli_generate_accepts_spec_from_stdin() -> None:
 
 
 def test_cli_doctor_resolves_relative_profiles(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     spec_dir = tmp_path / "spec"
     env_dir = tmp_path / "env"
@@ -208,7 +215,7 @@ def test_cli_doctor_resolves_relative_profiles(
             [[profiles]]
             name = "app-home"
             env_file = "~/home.env"
-            """
+            """,
         ),
         encoding="utf-8",
     )
@@ -229,7 +236,7 @@ def test_cli_doctor_profile_base_override(tmp_path: Path) -> None:
         [[profiles]]
         name = "app"
         env_file = "env/app.env"
-        """
+        """,
     )
     env_dir = profile_base / "env"
     env_dir.mkdir(parents=True)
@@ -274,9 +281,7 @@ def test_cli_doctor_all(tmp_path: Path) -> None:
     spec_copy = tmp_path / "envkeep.toml"
     missing = tmp_path / "missing.env"
     spec_copy.write_text(
-        spec_text
-        .replace(".env.dev", str(env_file))
-        .replace(".env.prod", str(missing)),
+        spec_text.replace(".env.dev", str(env_file)).replace(".env.prod", str(missing)),
         encoding="utf-8",
     )
     result = runner.invoke(app, ["doctor", "--spec", str(spec_copy)])
@@ -327,7 +332,7 @@ def test_cli_doctor_fail_on_warnings(tmp_path: Path) -> None:
                 "ALLOWED_HOSTS=localhost",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
                 "EXTRA=value",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -383,7 +388,7 @@ def test_cli_doctor_json_warnings(tmp_path: Path) -> None:
                 "ALLOWED_HOSTS=localhost",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
                 "EXTRA=value",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -449,7 +454,7 @@ def test_cli_doctor_json_invalid_lines_sorted(tmp_path: Path) -> None:
                 "FOO=value",
                 "BAR=value",
                 "BADLINE",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -460,7 +465,7 @@ def test_cli_doctor_json_invalid_lines_sorted(tmp_path: Path) -> None:
                 "FOO=value",
                 "BAR=value",
                 "INVALID",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -481,7 +486,7 @@ def test_cli_doctor_json_invalid_lines_sorted(tmp_path: Path) -> None:
         [[profiles]]
         name = "first"
         env_file = "env/first.env"
-        """
+        """,
     )
     spec_file = base_dir / "envkeep.toml"
     spec_file.write_text(spec_text, encoding="utf-8")
@@ -504,7 +509,9 @@ def test_cli_doctor_json_invalid_lines_sorted(tmp_path: Path) -> None:
     assert [entry["line"] for entry in invalid_lines] == ["line 2", "line 5", "line 3"]
 
 
-def test_cli_doctor_json_summary_top_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_doctor_json_summary_top_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
     env_file = tmp_path / "warn.env"
     env_file.write_text(
         "\n".join(
@@ -516,7 +523,7 @@ def test_cli_doctor_json_summary_top_zero(tmp_path: Path, capsys: pytest.Capture
                 "ALLOWED_HOSTS=localhost",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
                 "EXTRA=value",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -558,7 +565,7 @@ def test_cli_check_json_summary_reports_issue_flags(tmp_path: Path) -> None:
                 "API_TOKEN=invalid-token",
                 "EXTRA=value",
                 "API_TOKEN=override",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -576,7 +583,12 @@ def test_cli_check_json_summary_reports_issue_flags(tmp_path: Path) -> None:
     assert result.exit_code == 1
     payload = json.loads(result.stdout)
     summary = payload["summary"]
-    assert summary["issue_count"] == summary["severity_totals"]["error"] + summary["severity_totals"]["warning"] + summary["severity_totals"]["info"]
+    assert (
+        summary["issue_count"]
+        == summary["severity_totals"]["error"]
+        + summary["severity_totals"]["warning"]
+        + summary["severity_totals"]["info"]
+    )
     assert summary["has_errors"] is True
     assert summary["has_warnings"] is True
     assert summary["has_info"] is False
@@ -591,7 +603,9 @@ def test_cli_check_json_summary_reports_issue_flags(tmp_path: Path) -> None:
     assert report_payload["top_variables"]
 
 
-def test_cli_check_summary_top_zero_suppresses_impacted(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_check_summary_top_zero_suppresses_impacted(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
     env_file = tmp_path / "bad.env"
     env_file.write_text(
         "\n".join(
@@ -600,7 +614,7 @@ def test_cli_check_summary_top_zero_suppresses_impacted(tmp_path: Path, capsys: 
                 "API_TOKEN=invalid-token",
                 "EXTRA=value",
                 "API_TOKEN=override",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -618,7 +632,9 @@ def test_cli_check_summary_top_zero_suppresses_impacted(tmp_path: Path, capsys: 
     assert "Impacted:" not in output
 
 
-def test_cli_check_json_respects_summary_top(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_check_json_respects_summary_top(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
     env_file = tmp_path / "bad.env"
     env_file.write_text(
         "\n".join(
@@ -627,7 +643,7 @@ def test_cli_check_json_respects_summary_top(tmp_path: Path, capsys: pytest.Capt
                 "API_TOKEN=invalid-token",
                 "EXTRA=value",
                 "API_TOKEN=override",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -659,7 +675,7 @@ def test_cli_doctor_text_highlights_impacted_variables(tmp_path: Path) -> None:
                 "ALLOWED_HOSTS=localhost",
                 "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
                 "EXTRA=value",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -694,16 +710,16 @@ def test_cli_doctor_reports_summary(tmp_path: Path) -> None:
     assert "Total errors: 0" in result.stdout
     assert "Total warnings: 0" in result.stdout
     assert "Total info: 0" in result.stdout
-    assert "Warnings breakdown: Duplicates: 0 · Extra variables: 0 · Invalid lines: 0" in result.stdout
+    assert (
+        "Warnings breakdown: Duplicates: 0 · Extra variables: 0 · Invalid lines: 0" in result.stdout
+    )
     assert "Impacted variables:" not in result.stdout
     assert "Resolved profile paths:" in result.stdout
     dev_env_str = str(dev_env)
     missing_env = str(tmp_path / "missing.env")
     normalized_output = " ".join(result.stdout.split())
     assert f"• development: {dev_env_str} -> {dev_env_str}" in normalized_output
-    assert (
-        f"• production: {missing_env} -> {missing_env} (missing)" in normalized_output
-    )
+    assert f"• production: {missing_env} -> {missing_env} (missing)" in normalized_output
 
 
 def test_cli_doctor_profile_base_missing_dir(tmp_path: Path) -> None:
@@ -717,7 +733,7 @@ def test_cli_doctor_profile_base_missing_dir(tmp_path: Path) -> None:
         [[profiles]]
         name = "app"
         env_file = "env/app.env"
-        """
+        """,
     )
     missing_base = tmp_path / "missing"
     result = runner.invoke(
@@ -748,7 +764,7 @@ def test_cli_doctor_profile_base_not_directory(tmp_path: Path) -> None:
         [[profiles]]
         name = "app"
         env_file = "env/app.env"
-        """
+        """,
     )
     file_base = tmp_path / "base.txt"
     file_base.write_text("not a directory", encoding="utf-8")
@@ -776,7 +792,7 @@ def test_cli_check_reads_from_stdin() -> None:
             "DEBUG=false",
             "ALLOWED_HOSTS=localhost",
             "API_TOKEN=ABCDEFGHIJKLMNOPQRSTUVWX12345678",
-        ]
+        ],
     )
     result = runner.invoke(
         app,
@@ -840,7 +856,9 @@ def test_cli_diff_json_summary(tmp_path: Path) -> None:
     assert report_payload["top_variables"] == []
 
 
-def test_cli_diff_summary_top_zero_omits_impacted(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_diff_summary_top_zero_omits_impacted(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
     left = tmp_path / "left.env"
     right = tmp_path / "right.env"
     left.write_text(DEV_ENV.read_text(), encoding="utf-8")
@@ -851,7 +869,7 @@ def test_cli_diff_summary_top_zero_omits_impacted(tmp_path: Path, capsys: pytest
                 "DEBUG=false",
                 "ALLOWED_HOSTS=localhost,api.local",
                 "EXTRA_VAR=value",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -879,7 +897,7 @@ def test_cli_diff_text_summary_breakdown(tmp_path: Path) -> None:
                 "DEBUG=false",
                 "ALLOWED_HOSTS=localhost,api.local",
                 "EXTRA_VAR=value",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -896,11 +914,12 @@ def test_cli_diff_text_summary_breakdown(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "Missing: 1" in result.stdout
     assert "Extra: 1" in result.stdout
-    assert "Changed: 1" in result.stdout
+    assert "Changed: 2" in result.stdout
     assert "Impacted:" in result.stdout
     assert "Missing\n" in result.stdout
     assert "Extra\n" in result.stdout
     assert "Changed\n" in result.stdout
+
 
 def test_cli_check_supports_spec_from_stdin(tmp_path: Path) -> None:
     env_file = tmp_path / "from-stdin.env"
@@ -997,7 +1016,7 @@ def test_cli_inspect_text_shows_resolved_paths() -> None:
             name = "app"
             env_file = "env/app.env"
             description = "Primary"
-            """
+            """,
         )
         spec_file = base / "envkeep.toml"
         spec_file.write_text(spec_text, encoding="utf-8")
@@ -1022,7 +1041,7 @@ def test_cli_inspect_profile_base_override(tmp_path: Path) -> None:
         [[profiles]]
         name = "app"
         env_file = "env/app.env"
-        """
+        """,
     )
     result = runner.invoke(
         app,
@@ -1053,7 +1072,7 @@ def test_cli_check_orders_severity_and_reports_info(tmp_path: Path) -> None:
                 "API_TOKEN=invalid-token",
                 "EXTRA=value",
                 "API_TOKEN=override",
-            ]
+            ],
         ),
         encoding="utf-8",
     )

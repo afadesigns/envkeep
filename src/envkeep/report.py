@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-"""Reporting utilities with copy-on-read caches for envkeep CLI output."""
-
+# Reporting utilities with copy-on-read caches for envkeep CLI output.
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Iterator
+from typing import Any
 
 from .utils import casefold_sorted, line_number_sort_key, normalized_limit, sorted_counter
 
@@ -59,18 +58,23 @@ class ValidationReport:
     _severity_variable_cache: dict[IssueSeverity, tuple[str, ...]] = field(init=False, repr=False)
     _top_variables_cache: tuple[tuple[str, int], ...] | None = field(init=False, repr=False)
     _most_common_codes_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
-    _sorted_severity_cache: dict[IssueSeverity, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
+    _sorted_severity_cache: dict[IssueSeverity, tuple[ValidationIssue, ...]] = field(
+        init=False, repr=False,
+    )
     _sorted_code_cache: dict[str, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
     _sorted_variable_cache: dict[str, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
     _counts_by_code_cache: tuple[tuple[str, int], ...] | None = field(init=False, repr=False)
     _counts_by_code_mapping: MappingProxyType[str, int] | None = field(init=False, repr=False)
     _variables_cache: tuple[str, ...] | None = field(init=False, repr=False)
-    _warning_summary_cache: tuple[
-        int,
-        tuple[str, ...],
-        tuple[str, ...],
-        tuple[tuple[str, str], ...],
-    ] | None = field(init=False, repr=False)
+    _warning_summary_cache: (
+        tuple[
+            int,
+            tuple[str, ...],
+            tuple[str, ...],
+            tuple[tuple[str, str], ...],
+        ]
+        | None
+    ) = field(init=False, repr=False)
     _variables_by_severity_cache: dict[str, tuple[str, ...]] | None = field(init=False, repr=False)
     _issue_sort_key = staticmethod(
         lambda issue: (
@@ -79,7 +83,7 @@ class ValidationReport:
             issue.code,
             issue.message,
             issue.hint or "",
-        )
+        ),
     )
 
     def __post_init__(self) -> None:
@@ -224,8 +228,7 @@ class ValidationReport:
         cached = self._variables_by_severity_cache
         if cached is None:
             cached = {
-                severity.value: self._variables_for_severity(severity)
-                for severity in IssueSeverity
+                severity.value: self._variables_for_severity(severity) for severity in IssueSeverity
             }
             self._variables_by_severity_cache = cached
         return {key: list(values) for key, values in cached.items()}
@@ -335,10 +338,10 @@ class ValidationReport:
             extra_issues = self._sorted_code_bucket("extra")
             invalid_line_issues = self._sorted_code_bucket("invalid_line")
             duplicates = tuple(
-                casefold_sorted({issue.variable for issue in duplicate_issues})
+                casefold_sorted({issue.variable for issue in duplicate_issues}),
             )
             extras = tuple(
-                casefold_sorted({issue.variable for issue in extra_issues})
+                casefold_sorted({issue.variable for issue in extra_issues}),
             )
             invalid_lines = tuple(
                 sorted(
@@ -347,7 +350,7 @@ class ValidationReport:
                         for issue in invalid_line_issues
                     ),
                     key=lambda item: line_number_sort_key(item[0]),
-                )
+                ),
             )
             cached = self._warning_summary_cache = (
                 self.warning_count,
@@ -360,10 +363,7 @@ class ValidationReport:
             "total": total,
             "duplicates": list(duplicates),
             "extra_variables": list(extras),
-            "invalid_lines": [
-                {"line": line, "hint": hint}
-                for line, hint in invalid_lines
-            ],
+            "invalid_lines": [{"line": line, "hint": hint} for line, hint in invalid_lines],
         }
 
 
@@ -495,7 +495,7 @@ class DiffReport:
                     item.variable.casefold(),
                     item.variable,
                 ),
-            )
+            ),
         )
         self._sorted_entries_cache = sorted_entries
         return [*sorted_entries]
@@ -512,7 +512,7 @@ class DiffReport:
             sorted(
                 bucket,
                 key=lambda item: (item.variable.casefold(), item.variable),
-            )
+            ),
         )
         self._sorted_kind_cache[kind] = sorted_bucket
         return [*sorted_bucket]
@@ -553,23 +553,14 @@ class DiffReport:
         if self._variables_by_kind_cache is None:
             computed: dict[str, tuple[str, ...]] = {}
             for kind in DiffKind:
-                variables = {
-                    entry.variable
-                    for entry in self._kind_buckets.get(kind, [])
-                }
+                variables = {entry.variable for entry in self._kind_buckets.get(kind, [])}
                 computed[kind.value] = tuple(casefold_sorted(variables))
             self._variables_by_kind_cache = computed
-        return {
-            key: list(values)
-            for key, values in self._variables_by_kind_cache.items()
-        }
+        return {key: list(values) for key, values in self._variables_by_kind_cache.items()}
 
     def counts_by_kind(self) -> Mapping[str, int]:
         if self._counts_by_kind_mapping is None:
-            data = {
-                kind.value: self.count_for(kind)
-                for kind in self._kind_order
-            }
+            data = {kind.value: self.count_for(kind) for kind in self._kind_order}
             self._counts_by_kind_mapping = MappingProxyType(data)
         return self._counts_by_kind_mapping
 
