@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import warnings
 from collections import Counter
 from enum import Enum
 from pathlib import Path
@@ -10,7 +11,6 @@ from typing import Any, cast
 import typer
 from rich.console import Console
 from rich.table import Table
-from typing_extensions import Annotated
 
 from ._compat import tomllib
 from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
@@ -29,6 +29,13 @@ try:  # pragma: no cover - Click 8.0 compatibility
     from click._utils import UNSET as _CLICK_UNSET  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
     _CLICK_UNSET = None
+
+if _CLICK_UNSET is None:  # pragma: no cover - Typer >=0.12 on newer Click versions
+    warnings.filterwarnings(
+        "ignore",
+        message="The 'is_flag' and 'flag_value' parameters are not supported by Typer",
+        category=DeprecationWarning,
+    )
 
 app = typer.Typer(help="Deterministic environment spec and drift detection for .env workflows.")
 console = Console()
@@ -350,20 +357,20 @@ def check(
     env_file: Path = ENV_FILE_ARGUMENT,
     spec: Path = SPEC_OPTION_DEFAULT,
     output_format: str = FORMAT_OPTION_DEFAULT,
-    allow_extra: Annotated[
-        bool,
-        typer.Option(
-            "--allow-extra",
-            help="Allow variables not declared in the spec.",
-        ),
-    ] = False,
-    fail_on_warnings: Annotated[
-        bool,
-        typer.Option(
-            "--fail-on-warnings",
-            help="Treat warnings as errors for CI enforcement.",
-        ),
-    ] = False,
+    allow_extra: bool = typer.Option(
+        False,
+        "--allow-extra",
+        help="Allow variables not declared in the spec.",
+        is_flag=True,
+        flag_value=True,
+    ),
+    fail_on_warnings: bool = typer.Option(
+        False,
+        "--fail-on-warnings",
+        help="Treat warnings as errors for CI enforcement.",
+        is_flag=True,
+        flag_value=True,
+    ),
     summary_top: int = typer.Option(
         3,
         "--summary-top",
@@ -449,13 +456,13 @@ def diff(
 def generate(
     spec: Path = SPEC_OPTION_DEFAULT,
     output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
-    no_redact_secrets: Annotated[
-        bool,
-        typer.Option(
-            "--no-redact-secrets",
-            help="Disable masking for variables marked as secret.",
-        ),
-    ] = False,
+    no_redact_secrets: bool = typer.Option(
+        False,
+        "--no-redact-secrets",
+        help="Disable masking for variables marked as secret.",
+        is_flag=True,
+        flag_value=True,
+    ),
 ) -> None:
     """Generate a sanitized .env example from the spec."""
 
@@ -565,20 +572,20 @@ def doctor(
     profile: str = PROFILE_OPTION_DEFAULT,
     output_format: str = FORMAT_OPTION_DEFAULT,
     profile_base: OptionalPath = PROFILE_BASE_OPTION_DEFAULT,
-    allow_extra: Annotated[
-        bool,
-        typer.Option(
-            "--allow-extra",
-            help="Allow extra variables when validating profiles.",
-        ),
-    ] = False,
-    fail_on_warnings: Annotated[
-        bool,
-        typer.Option(
-            "--fail-on-warnings",
-            help="Fail when any profile emits warnings.",
-        ),
-    ] = False,
+    allow_extra: bool = typer.Option(
+        False,
+        "--allow-extra",
+        help="Allow extra variables when validating profiles.",
+        is_flag=True,
+        flag_value=True,
+    ),
+    fail_on_warnings: bool = typer.Option(
+        False,
+        "--fail-on-warnings",
+        help="Fail when any profile emits warnings.",
+        is_flag=True,
+        flag_value=True,
+    ),
     summary_top: int = typer.Option(
         3,
         "--summary-top",
