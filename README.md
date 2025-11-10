@@ -58,6 +58,23 @@ Pipe specs directly from tooling with `--spec -` (for example, `cat envkeep.toml
 
 See [`examples/basic`](examples/basic) for a complete spec and environment pair and [`examples/socialsense`](examples/socialsense) for a multi-profile demo with bundled `.env` fixtures.
 
+## Configuration
+
+`envkeep` can be configured via a `[tool.envkeep]` section in your `pyproject.toml` file. This is useful for setting project-wide defaults.
+
+-   `spec`: Path to the `envkeep.toml` spec file.
+-   `profile_base`: The base directory for resolving relative `env_file` paths in profiles.
+
+**Example `pyproject.toml`:**
+
+```toml
+[tool.envkeep]
+spec = "config/envkeep.toml"
+profile_base = "config/profiles"
+```
+
+Command-line options will always override settings in `pyproject.toml`.
+
 ## Features
 - Automatic `envkeep.toml` discovery by searching the current and parent directories.
 - Typed spec parsing with validation for defaults, patterns, and enumerated values.

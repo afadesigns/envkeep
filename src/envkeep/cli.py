@@ -14,6 +14,7 @@ from rich.table import Table
 
 from ._compat import tomllib
 from .cache import Cache
+from .config import load_config
 from .plugins import Backend, load_backends
 from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
@@ -172,6 +173,9 @@ def _resolve_profile_path(raw: str, *, base_dir: Path) -> Path:
 
 def _read_spec_input(spec: Path | None) -> tuple[str, str | None]:
     """Return the spec path string plus stdin contents when ``spec`` is ``-``."""
+    if spec is None:
+        config = load_config()
+        spec = config.spec_path
 
     if spec is None:
         spec = find_spec_path()
@@ -185,6 +189,9 @@ def _read_spec_input(spec: Path | None) -> tuple[str, str | None]:
 
 def _resolve_profile_base_dir(profile_base: Path | None, *, default_base: Path) -> Path:
     """Validate and resolve the profile base directory for doctor/inspect commands."""
+    if profile_base is None:
+        config = load_config()
+        profile_base = config.profile_base
 
     if profile_base is None:
         return default_base
@@ -367,6 +374,10 @@ def _emit_doctor_json(
 
 def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
     if path is None:
+        config = load_config()
+        path = config.spec_path
+
+    if path is None:
         path = find_spec_path()
         if path is None:
             raise typer.BadParameter("spec file not found (envkeep.toml)")
@@ -530,13 +541,15 @@ def inspect(
     profile_base: OptionalPath = PROFILE_BASE_OPTION_DEFAULT,
 ) -> None:
     """Print a summary of variables and profiles declared in the spec."""
+    config = load_config()
+    spec_path_resolved = spec or config.spec_path
+    profile_base_path = resolve_optional_path_option(profile_base) or config.profile_base
 
-    profile_base_path = resolve_optional_path_option(profile_base)
-    spec_path_str, stdin_spec = _read_spec_input(spec)
+    spec_path_str, stdin_spec = _read_spec_input(spec_path_resolved)
     spec_path = Path(spec_path_str)
     spec_base = _spec_base_dir(spec_path)
     profile_base_dir = _resolve_profile_base_dir(profile_base_path, default_base=spec_base)
-    env_spec = load_spec(spec, stdin_data=stdin_spec)
+    env_spec = load_spec(Path(spec_path_str) if spec_path_str else None, stdin_data=stdin_spec)
     fmt = _coerce_output_format(output_format)
     if fmt is OutputFormat.JSON:
         variables_payload = [
@@ -644,8 +657,12 @@ def doctor(
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
-    profile_base_path = resolve_optional_path_option(profile_base)
-    spec_path_str, stdin_spec = _read_spec_input(spec)
+
+    config = load_config()
+    spec_path_resolved = spec or config.spec_path
+    profile_base_path = resolve_optional_path_option(profile_base) or config.profile_base
+
+    spec_path_str, stdin_spec = _read_spec_input(spec_path_resolved)
     spec_path = Path(spec_path_str)
     spec_base = _spec_base_dir(spec_path)
     profile_base_dir = _resolve_profile_base_dir(profile_base_path, default_base=spec_base)
