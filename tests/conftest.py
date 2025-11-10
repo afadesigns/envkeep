@@ -17,4 +17,3 @@ def _ensure_src_on_path() -> None:
 
 
 _ensure_src_on_path()
-

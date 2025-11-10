@@ -59,7 +59,8 @@ class ValidationReport:
     _top_variables_cache: tuple[tuple[str, int], ...] | None = field(init=False, repr=False)
     _most_common_codes_cache: list[tuple[str, int]] | None = field(init=False, repr=False)
     _sorted_severity_cache: dict[IssueSeverity, tuple[ValidationIssue, ...]] = field(
-        init=False, repr=False,
+        init=False,
+        repr=False,
     )
     _sorted_code_cache: dict[str, tuple[ValidationIssue, ...]] = field(init=False, repr=False)
     _sorted_variable_cache: dict[str, tuple[ValidationIssue, ...]] = field(init=False, repr=False)

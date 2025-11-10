@@ -31,11 +31,11 @@ class EnvSnapshot:
     invalid_lines: tuple[tuple[int, str], ...] = ()
 
     @classmethod
-    def from_mapping(
+    def from_dict(
         cls,
         mapping: dict[str, str],
         *,
-        source: str = "mapping",
+        source: str = "dict",
         duplicates: Iterable[str] | None = None,
         invalid_lines: Iterable[tuple[int, str]] | None = None,
     ) -> EnvSnapshot:
@@ -44,6 +44,23 @@ class EnvSnapshot:
             source=source,
             duplicates=tuple(duplicates or ()),
             invalid_lines=tuple(invalid_lines or ()),
+        )
+
+    @classmethod
+    def from_mapping(
+        cls,
+        mapping: dict[str, str],
+        *,
+        source: str = "mapping",
+        duplicates: Iterable[str] | None = None,
+        invalid_lines: Iterable[tuple[int, str]] | None = None,
+    ) -> EnvSnapshot:
+        # Deprecated: Use from_dict instead.
+        return cls.from_dict(
+            mapping,
+            source=source,
+            duplicates=duplicates,
+            invalid_lines=invalid_lines,
         )
 
     @classmethod
@@ -99,6 +116,10 @@ class EnvSnapshot:
         """Return non-empty lines that could not be parsed."""
 
         return self.invalid_lines
+
+    def to_dict(self) -> dict[str, str]:
+        """Return a copy of the snapshot's values."""
+        return self.values.copy()
 
     def __contains__(self, key: str) -> bool:  # pragma: no cover
         return key in self.values

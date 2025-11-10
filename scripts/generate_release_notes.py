@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate release notes from conventional commits."""
+
 from __future__ import annotations
 
 import argparse

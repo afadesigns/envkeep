@@ -63,17 +63,21 @@ def test_diff_detects_changes(tmp_path: Path) -> None:
 def test_diff_orders_extra_variables_case_insensitive() -> None:
     spec = EnvSpec.from_dict({"version": 1, "variables": []})
     left_snapshot = EnvSnapshot.from_text(
-        "\n".join([
-            "beta=1",
-            "Alpha=1",
-        ]),
+        "\n".join(
+            [
+                "beta=1",
+                "Alpha=1",
+            ]
+        ),
         source="left",
     )
     right_snapshot = EnvSnapshot.from_text(
-        "\n".join([
-            "Gamma=1",
-            "alpha=1",
-        ]),
+        "\n".join(
+            [
+                "Gamma=1",
+                "alpha=1",
+            ]
+        ),
         source="right",
     )
     diff = spec.diff(left_snapshot, right_snapshot)

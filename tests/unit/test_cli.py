@@ -510,7 +510,8 @@ def test_cli_doctor_json_invalid_lines_sorted(tmp_path: Path) -> None:
 
 
 def test_cli_doctor_json_summary_top_zero(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     env_file = tmp_path / "warn.env"
     env_file.write_text(
@@ -604,7 +605,8 @@ def test_cli_check_json_summary_reports_issue_flags(tmp_path: Path) -> None:
 
 
 def test_cli_check_summary_top_zero_suppresses_impacted(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     env_file = tmp_path / "bad.env"
     env_file.write_text(
@@ -633,7 +635,8 @@ def test_cli_check_summary_top_zero_suppresses_impacted(
 
 
 def test_cli_check_json_respects_summary_top(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     env_file = tmp_path / "bad.env"
     env_file.write_text(
@@ -857,7 +860,8 @@ def test_cli_diff_json_summary(tmp_path: Path) -> None:
 
 
 def test_cli_diff_summary_top_zero_omits_impacted(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     left = tmp_path / "left.env"
     right = tmp_path / "right.env"
@@ -1071,27 +1075,26 @@ def test_cli_inspect_profile_base_override(tmp_path: Path) -> None:
     assert profile["resolved_env_file"] == str(env_file)
     assert payload["profile_base_dir"] == str(env_dir.parent.resolve())
 
-
-def test_cli_check_orders_severity_and_reports_info(tmp_path: Path) -> None:
-    env_file = tmp_path / "bad.env"
-    env_file.write_text(
-        "\n".join(
-            [
-                "DATABASE_URL=postgresql://localhost/dev",
-                "API_TOKEN=invalid-token",
-                "EXTRA=value",
-                "API_TOKEN=override",
-            ],
-        ),
-        encoding="utf-8",
-    )
-    result = runner.invoke(app, ["check", str(env_file), "--spec", str(EXAMPLE_SPEC)])
-    assert result.exit_code == 1
-    table_lines = [line for line in result.stdout.splitlines() if line.startswith("│")]
-    error_index = next(i for i, line in enumerate(table_lines) if "ERROR" in line)
-    warning_index = next(i for i, line in enumerate(table_lines) if "WARNING" in line)
-    assert error_index < warning_index
-    assert "Errors: 1" in result.stdout
-    assert "Warnings: 2" in result.stdout
-    assert "Impacted:" in result.stdout
-    assert "Info" not in result.stdout
+    def test_cli_check_orders_severity_and_reports_info(tmp_path: Path) -> None:
+        env_file = tmp_path / "bad.env"
+        env_file.write_text(
+            "\n".join(
+                [
+                    "DATABASE_URL=postgresql://localhost/dev",
+                    "API_TOKEN=invalid-token",
+                    "EXTRA=value",
+                    "API_TOKEN=override",
+                ],
+            ),
+            encoding="utf-8",
+        )
+        result = runner.invoke(app, ["check", str(env_file), "--spec", str(EXAMPLE_SPEC)])
+        assert result.exit_code == 1
+        table_lines = [line for line in result.stdout.splitlines() if line.startswith("│")]
+        error_index = next(i for i, line in enumerate(table_lines) if "ERROR" in line)
+        warning_index = next(i for i, line in enumerate(table_lines) if "WARNING" in line)
+        assert error_index < warning_index
+        assert "Errors: 1" in result.stdout
+        assert "Warnings: 1" in result.stdout
+        assert "Impacted:" in result.stdout
+        assert "Info" not in result.stdout

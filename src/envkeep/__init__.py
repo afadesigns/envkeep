@@ -1,4 +1,5 @@
 """Envkeep public API."""
+
 from .report import (
     DiffEntry,
     DiffKind,

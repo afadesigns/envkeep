@@ -115,6 +115,7 @@ class VariableSpec:
     pattern: re.Pattern[str] | None = None
     example: str | None = None
     allow_empty: bool = False
+    source: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VariableSpec:
@@ -140,6 +141,7 @@ class VariableSpec:
             pattern=compiled,
             example=example,
             allow_empty=bool(data.get("allow_empty", False)),
+            source=data.get("source"),
         )
         if default is not None:
             instance.validate(default)

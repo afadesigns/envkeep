@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import warnings
-from collections import Counter
+from collections import Counter, defaultdict
 from enum import Enum
 from pathlib import Path
 from typing import Any, cast
@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ._compat import tomllib
+from .plugins import Backend, load_backends
 from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
 from .spec import EnvSpec, ProfileSpec
@@ -42,6 +43,36 @@ app = typer.Typer(help="Deterministic environment spec and drift detection for .
 console = Console()
 DEFAULT_OUTPUT_FORMAT = "text"
 DEFAULT_PROFILE = "all"
+
+
+def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
+    """Fetch values from all remote backends defined in the spec."""
+    backends = load_backends()
+    if not backends:
+        return {}
+
+    sources_by_backend: dict[str, dict[str, str]] = defaultdict(dict)
+    for var in spec.variables:
+        if var.source:
+            try:
+                backend_name, source_uri = var.source.split(":", 1)
+                if backend_name in backends:
+                    sources_by_backend[backend_name][var.name] = source_uri
+            except ValueError:
+                # Ignore malformed source strings
+                pass
+
+    fetched_values: dict[str, str] = {}
+    for backend_name, sources in sources_by_backend.items():
+        backend = backends[backend_name]
+        try:
+            results = backend.fetch(sources)
+            fetched_values.update(results)
+        except Exception:
+            # Broadly catch exceptions from plugins to prevent them from crashing envkeep
+            pass
+
+    return fetched_values
 
 
 class OutputFormat(str, Enum):
@@ -391,13 +422,25 @@ def check(
     spec_path_str, stdin_spec = _read_spec_input(spec)
     if spec_path_str == "-" and env_path == "-":
         _usage_error("cannot read both spec and environment from stdin")
-    env_spec = load_spec(spec, stdin_data=stdin_spec)
+    env_spec = load_spec(Path(spec_path_str) if spec_path_str else None, stdin_data=stdin_spec)
+
+    # Fetch remote values from plugins
+    remote_values = _fetch_remote_values(env_spec)
+
     if env_path == "-":
         data = sys.stdin.read()
         snapshot = EnvSnapshot.from_text(data, source="stdin")
     else:
         snapshot = EnvSnapshot.from_env_file(env_file)
-    report = env_spec.validate(snapshot, allow_extra=allow_extra)
+
+    # Merge local and remote values, with remote taking precedence
+    combined_values = snapshot.to_dict()
+    combined_values.update(remote_values)
+
+    # Create a new snapshot from the combined values for validation
+    combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
+
+    report = env_spec.validate(combined_snapshot, allow_extra=allow_extra)
     fmt = _coerce_output_format(output_format)
     exit_code = _handle_validation_output(
         report,

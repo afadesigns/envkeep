@@ -56,6 +56,9 @@ Issues = "https://github.com/afadesigns/envkeep/issues"
 [project.scripts]
 envkeep = "envkeep.cli:app"
 
+[project.entry-points."envkeep.backends"]
+json = "tests.plugins.json_backend:JsonBackend"
+
 [tool.hatch.metadata]
 allow-direct-references = true
 

@@ -82,6 +82,23 @@ See [`examples/basic`](examples/basic) for a complete spec and environment pair 
 - GitHub and GitLab Actions wrappers to enforce Envkeep in CI.
 See [ROADMAP.md](ROADMAP.md) for the full backlog.
 
+## Plugin System
+Envkeep supports a plugin system for fetching variables from remote backends like cloud secret managers or configuration servers.
+
+To use a plugin, first install its package (e.g., `pip install envkeep-aws-sm`). Then, in your `envkeep.toml`, add a `source` attribute to any variable you want to fetch remotely:
+
+```toml
+[[variables]]
+name = "DATABASE_URL"
+type = "url"
+secret = true
+source = "aws-sm:prod/database/url" # Fetched via the 'aws-sm' backend
+```
+
+When you run `envkeep check`, the tool will automatically discover and invoke the appropriate plugin. Remotely fetched values take precedence over values in the local `.env` file.
+
+See the [plugin development guide](docs/plugins.md) for details on creating your own backends.
+
 ## FAQ
 **Is Envkeep a secret manager?** No. Envkeep verifies configuration contracts; storage and rotation stay with your existing tooling.
 

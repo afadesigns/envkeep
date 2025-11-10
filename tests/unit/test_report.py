@@ -16,10 +16,16 @@ def test_validation_report_summary_counts() -> None:
     report = ValidationReport(
         issues=[
             ValidationIssue(
-                variable="A", message="boom", severity=IssueSeverity.ERROR, code="missing",
+                variable="A",
+                message="boom",
+                severity=IssueSeverity.ERROR,
+                code="missing",
             ),
             ValidationIssue(
-                variable="B", message="warn", severity=IssueSeverity.WARNING, code="extra",
+                variable="B",
+                message="warn",
+                severity=IssueSeverity.WARNING,
+                code="extra",
             ),
             ValidationIssue(variable="C", message="info", severity=IssueSeverity.INFO, code="note"),
         ],
@@ -280,7 +286,10 @@ def test_validation_report_most_common_codes_limit() -> None:
     report = ValidationReport()
     entries = [
         ValidationIssue(
-            variable=f"VAR_{idx}", message="warn", severity=IssueSeverity.WARNING, code="extra",
+            variable=f"VAR_{idx}",
+            message="warn",
+            severity=IssueSeverity.WARNING,
+            code="extra",
         )
         for idx in range(3)
     ]
@@ -354,13 +363,22 @@ def test_validation_report_views_are_copy_on_read() -> None:
     report = ValidationReport(
         issues=[
             ValidationIssue(
-                variable="A", message="missing", severity=IssueSeverity.ERROR, code="missing",
+                variable="A",
+                message="missing",
+                severity=IssueSeverity.ERROR,
+                code="missing",
             ),
             ValidationIssue(
-                variable="B", message="dup", severity=IssueSeverity.WARNING, code="duplicate",
+                variable="B",
+                message="dup",
+                severity=IssueSeverity.WARNING,
+                code="duplicate",
             ),
             ValidationIssue(
-                variable="C", message="warn", severity=IssueSeverity.WARNING, code="extra",
+                variable="C",
+                message="warn",
+                severity=IssueSeverity.WARNING,
+                code="extra",
             ),
         ],
     )
@@ -398,10 +416,16 @@ def test_counts_by_code_is_read_only() -> None:
     report = ValidationReport(
         issues=[
             ValidationIssue(
-                variable="A", message="boom", severity=IssueSeverity.ERROR, code="missing",
+                variable="A",
+                message="boom",
+                severity=IssueSeverity.ERROR,
+                code="missing",
             ),
             ValidationIssue(
-                variable="B", message="warn", severity=IssueSeverity.WARNING, code="extra",
+                variable="B",
+                message="warn",
+                severity=IssueSeverity.WARNING,
+                code="extra",
             ),
         ],
     )
