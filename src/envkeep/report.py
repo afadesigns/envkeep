@@ -276,6 +276,21 @@ class ValidationReport:
             "issues": [issue.to_dict() for issue in self.issues],
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ValidationReport:
+        issues = [
+            ValidationIssue(
+                variable=item["variable"],
+                message=item["message"],
+                severity=IssueSeverity(item["severity"]),
+                code=item["code"],
+                hint=item.get("hint"),
+            )
+            for item in data.get("issues", [])
+        ]
+        return cls(issues=issues)
+
+
     def summary(self, *, top_limit: int | None = None) -> dict[str, Any]:
         limit = normalized_limit(top_limit)
         return {

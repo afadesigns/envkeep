@@ -70,6 +70,36 @@ See [`examples/basic`](examples/basic) for a complete spec and environment pair 
 - MkDocs-powered documentation with mkdocstrings API reference.
 - First-class CI workflows for linting, typing, testing, docs, and release automation.
 
+### Doctor
+
+The `doctor` command validates profiles against the spec. You can check all profiles at once or target a specific one.
+
+**Check all profiles:**
+
+```bash
+envkeep doctor
+```
+
+**Check a single profile:**
+
+```bash
+envkeep doctor --profile staging
+```
+
+**Performance Caching:**
+
+To improve performance, `envkeep` caches the results of `doctor` validations. If neither the `envkeep.toml` spec nor the profile's `.env` file has changed since the last run, `envkeep` will use the cached report instead of re-validating.
+
+To bypass this cache and force a fresh validation, use the `--no-cache` flag:
+
+```bash
+envkeep doctor --no-cache
+```
+
+### Diff
+
+The `diff` command compares two environment files, using the spec to normalize values and identify meaningful differences. This is useful for comparing local changes against a deployed environment.
+
 ## Architecture
 - `envkeep.toml` defines variables, metadata, and environment profiles.
 - The core library normalizes values, produces validation reports, and renders diffs.

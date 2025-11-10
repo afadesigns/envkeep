@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ._compat import tomllib
+from .cache import Cache
 from .plugins import Backend, load_backends
 from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
@@ -633,6 +634,11 @@ def doctor(
         "--summary-top",
         help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Disable caching of validation reports.",
+    ),
 ) -> None:
     """Validate one or more profiles declared in the spec."""
 
@@ -643,11 +649,13 @@ def doctor(
     spec_path = Path(spec_path_str)
     spec_base = _spec_base_dir(spec_path)
     profile_base_dir = _resolve_profile_base_dir(profile_base_path, default_base=spec_base)
-    env_spec = load_spec(spec, stdin_data=stdin_spec)
+    env_spec = load_spec(Path(spec_path_str) if spec_path_str else None, stdin_data=stdin_spec)
     profiles = list(env_spec.iter_profiles())
     if not profiles:
         typer.echo("No profiles declared in spec.")
         raise typer.Exit(code=0)
+
+    cache = Cache() if not no_cache else None
 
     def _selected_entry(item: ProfileSpec) -> dict[str, Any]:
         resolved = _resolve_profile_path(item.env_file, base_dir=profile_base_dir)
@@ -707,8 +715,14 @@ def doctor(
                 typer.echo(f"Profile {name}: missing env file {env_path}")
             exit_code = 1
             continue
-        snapshot = EnvSnapshot.from_env_file(env_path)
-        report = env_spec.validate(snapshot, allow_extra=allow_extra)
+
+        report = cache.get_report(env_path, spec_path) if cache else None
+        if report is None:
+            snapshot = EnvSnapshot.from_env_file(env_path)
+            report = env_spec.validate(snapshot, allow_extra=allow_extra)
+            if cache:
+                cache.set_report(env_path, spec_path, report)
+
         checked_profiles += 1
         severity_totals = report.severity_totals()
         total_errors += severity_totals[IssueSeverity.ERROR.value]
