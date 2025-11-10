@@ -19,6 +19,7 @@ from .spec import EnvSpec, ProfileSpec
 from .utils import (
     OptionalPath,
     casefold_sorted,
+    find_spec_path,
     line_number_sort_key,
     normalized_limit,
     resolve_optional_path_option,
@@ -39,7 +40,6 @@ if _CLICK_UNSET is None:  # pragma: no cover - Typer >=0.12 on newer Click versi
 
 app = typer.Typer(help="Deterministic environment spec and drift detection for .env workflows.")
 console = Console()
-DEFAULT_SPEC_PATH = Path("envkeep.toml")
 DEFAULT_OUTPUT_FORMAT = "text"
 DEFAULT_PROFILE = "all"
 
@@ -80,7 +80,9 @@ def _coerce_output_format(raw: str) -> OutputFormat:
         raise typer.Exit(code=2) from exc
 
 
-SPEC_OPTION = _option_with_value(DEFAULT_SPEC_PATH, "--spec", "-s", help="Path to envkeep spec.")
+SPEC_OPTION = _option_with_value(
+    None, "--spec", "-s", help="Path to envkeep spec (searches parents if not specified)."
+)
 FORMAT_OPTION = _option_with_value(
     DEFAULT_OUTPUT_FORMAT,
     "--format",
@@ -110,7 +112,7 @@ ENV_FILE_ARGUMENT = typer.Argument(..., help="Path to the environment file.")
 DIFF_FIRST_ARGUMENT = typer.Argument(..., help="Baseline environment file.")
 DIFF_SECOND_ARGUMENT = typer.Argument(..., help="Target environment file.")
 
-SPEC_OPTION_DEFAULT = cast(Path, SPEC_OPTION)
+SPEC_OPTION_DEFAULT = cast(OptionalPath, SPEC_OPTION)
 FORMAT_OPTION_DEFAULT = cast(str, FORMAT_OPTION)
 PROFILE_OPTION_DEFAULT = cast(str, PROFILE_OPTION)
 PROFILE_BASE_OPTION_DEFAULT = cast(OptionalPath, PROFILE_BASE_OPTION)
@@ -136,9 +138,13 @@ def _resolve_profile_path(raw: str, *, base_dir: Path) -> Path:
     return (base_dir / candidate).resolve()
 
 
-def _read_spec_input(spec: Path) -> tuple[str, str | None]:
+def _read_spec_input(spec: Path | None) -> tuple[str, str | None]:
     """Return the spec path string plus stdin contents when ``spec`` is ``-``."""
 
+    if spec is None:
+        spec = find_spec_path()
+        if spec is None:
+            raise typer.BadParameter("spec file not found (envkeep.toml)")
     spec_path = str(spec)
     if spec_path == "-":
         return spec_path, sys.stdin.read()
@@ -327,7 +333,11 @@ def _emit_doctor_json(
     _emit_json(payload)
 
 
-def load_spec(path: Path, *, stdin_data: str | None = None) -> EnvSpec:
+def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
+    if path is None:
+        path = find_spec_path()
+        if path is None:
+            raise typer.BadParameter("spec file not found (envkeep.toml)")
     path_str = str(path)
     try:
         if path_str == "-":
@@ -355,21 +365,17 @@ def load_spec(path: Path, *, stdin_data: str | None = None) -> EnvSpec:
 @app.command()
 def check(
     env_file: Path = ENV_FILE_ARGUMENT,
-    spec: Path = SPEC_OPTION_DEFAULT,
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
     output_format: str = FORMAT_OPTION_DEFAULT,
     allow_extra: bool = typer.Option(
         False,
         "--allow-extra",
         help="Allow variables not declared in the spec.",
-        is_flag=True,
-        flag_value=True,
     ),
     fail_on_warnings: bool = typer.Option(
         False,
         "--fail-on-warnings",
         help="Treat warnings as errors for CI enforcement.",
-        is_flag=True,
-        flag_value=True,
     ),
     summary_top: int = typer.Option(
         3,
@@ -382,10 +388,9 @@ def check(
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
     env_path = str(env_file)
-    spec_path = str(spec)
-    if spec_path == "-" and env_path == "-":
+    spec_path_str, stdin_spec = _read_spec_input(spec)
+    if spec_path_str == "-" and env_path == "-":
         _usage_error("cannot read both spec and environment from stdin")
-    _, stdin_spec = _read_spec_input(spec)
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     if env_path == "-":
         data = sys.stdin.read()
@@ -408,7 +413,7 @@ def check(
 def diff(
     first: Path = DIFF_FIRST_ARGUMENT,
     second: Path = DIFF_SECOND_ARGUMENT,
-    spec: Path = SPEC_OPTION_DEFAULT,
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
     output_format: str = FORMAT_OPTION_DEFAULT,
     summary_top: int = typer.Option(
         3,
@@ -420,11 +425,10 @@ def diff(
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
-    spec_path = str(spec)
+    spec_path_str, stdin_spec = _read_spec_input(spec)
     minus_count = sum(1 for candidate in (str(first), str(second)) if candidate == "-")
-    if spec_path == "-" and minus_count:
+    if spec_path_str == "-" and minus_count:
         _usage_error("cannot combine spec from stdin with environment stdin input")
-    _, stdin_spec = _read_spec_input(spec)
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     stdin_buffer: str | None = None
     if minus_count > 1:
@@ -454,14 +458,12 @@ def diff(
 
 @app.command()
 def generate(
-    spec: Path = SPEC_OPTION_DEFAULT,
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
     output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
     no_redact_secrets: bool = typer.Option(
         False,
         "--no-redact-secrets",
         help="Disable masking for variables marked as secret.",
-        is_flag=True,
-        flag_value=True,
     ),
 ) -> None:
     """Generate a sanitized .env example from the spec."""
@@ -479,15 +481,16 @@ def generate(
 
 @app.command()
 def inspect(
-    spec: Path = SPEC_OPTION_DEFAULT,
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
     output_format: str = FORMAT_OPTION_DEFAULT,
     profile_base: OptionalPath = PROFILE_BASE_OPTION_DEFAULT,
 ) -> None:
     """Print a summary of variables and profiles declared in the spec."""
 
     profile_base_path = resolve_optional_path_option(profile_base)
-    _, stdin_spec = _read_spec_input(spec)
-    spec_base = _spec_base_dir(spec)
+    spec_path_str, stdin_spec = _read_spec_input(spec)
+    spec_path = Path(spec_path_str)
+    spec_base = _spec_base_dir(spec_path)
     profile_base_dir = _resolve_profile_base_dir(profile_base_path, default_base=spec_base)
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     fmt = _coerce_output_format(output_format)
@@ -568,7 +571,7 @@ def inspect(
 
 @app.command()
 def doctor(
-    spec: Path = SPEC_OPTION_DEFAULT,
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
     profile: str = PROFILE_OPTION_DEFAULT,
     output_format: str = FORMAT_OPTION_DEFAULT,
     profile_base: OptionalPath = PROFILE_BASE_OPTION_DEFAULT,
@@ -576,15 +579,11 @@ def doctor(
         False,
         "--allow-extra",
         help="Allow extra variables when validating profiles.",
-        is_flag=True,
-        flag_value=True,
     ),
     fail_on_warnings: bool = typer.Option(
         False,
         "--fail-on-warnings",
         help="Fail when any profile emits warnings.",
-        is_flag=True,
-        flag_value=True,
     ),
     summary_top: int = typer.Option(
         3,
@@ -597,8 +596,9 @@ def doctor(
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
     profile_base_path = resolve_optional_path_option(profile_base)
-    _, stdin_spec = _read_spec_input(spec)
-    spec_base = _spec_base_dir(spec)
+    spec_path_str, stdin_spec = _read_spec_input(spec)
+    spec_path = Path(spec_path_str)
+    spec_base = _spec_base_dir(spec_path)
     profile_base_dir = _resolve_profile_base_dir(profile_base_path, default_base=spec_base)
     env_spec = load_spec(spec, stdin_data=stdin_spec)
     profiles = list(env_spec.iter_profiles())

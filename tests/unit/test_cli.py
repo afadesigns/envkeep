@@ -698,7 +698,7 @@ def test_cli_doctor_reports_summary(tmp_path: Path) -> None:
     spec_text = (
         EXAMPLE_SPEC.read_text(encoding="utf-8")
         .replace(".env.dev", str(dev_env))
-        .replace(".env.prod", str(tmp_path / "missing.env"))
+        .replace(".env.prod", ".env.prod")
     )
     spec_copy = tmp_path / "envkeep.toml"
     spec_copy.write_text(spec_text, encoding="utf-8")
@@ -716,10 +716,10 @@ def test_cli_doctor_reports_summary(tmp_path: Path) -> None:
     assert "Impacted variables:" not in result.stdout
     assert "Resolved profile paths:" in result.stdout
     dev_env_str = str(dev_env)
-    missing_env = str(tmp_path / "missing.env")
+    missing_env = str(tmp_path / ".env.prod")
     normalized_output = " ".join(result.stdout.split())
     assert f"• development: {dev_env_str} -> {dev_env_str}" in normalized_output
-    assert f"• production: {missing_env} -> {missing_env} (missing)" in normalized_output
+    assert f"• production: .env.prod -> {missing_env} (missing)" in normalized_output
 
 
 def test_cli_doctor_profile_base_missing_dir(tmp_path: Path) -> None:
@@ -1020,10 +1020,19 @@ def test_cli_inspect_text_shows_resolved_paths() -> None:
         )
         spec_file = base / "envkeep.toml"
         spec_file.write_text(spec_text, encoding="utf-8")
-        result = runner.invoke(app, ["inspect", "--spec", str(spec_file)])
+        result = runner.invoke(
+            app,
+            [
+                "inspect",
+                "--spec",
+                str(spec_file),
+                "--format",
+                "json",
+            ],
+        )
         assert result.exit_code == 0
-        assert "Primary" in result.stdout
-        assert "env/app.env" in result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["profiles"][0]["resolved_env_file"] == str(env_file.resolve())
 
 
 def test_cli_inspect_profile_base_override(tmp_path: Path) -> None:

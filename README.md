@@ -16,11 +16,11 @@ Typed environment specifications, drift detection, and CLI tooling for teams who
 
 ## Demo
 ```
-$ envkeep check examples/basic/.env.dev --spec examples/basic/envkeep.toml
+$ envkeep check examples/basic/.env.dev
 Validating examples/basic/.env.dev
 All checks passed.
 
-$ envkeep diff examples/basic/.env.dev examples/basic/.env.prod --spec examples/basic/envkeep.toml
+$ envkeep diff examples/basic/.env.dev examples/basic/.env.prod
 Diffing examples/basic/.env.dev -> examples/basic/.env.prod
 Changed
 ┏━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
@@ -50,15 +50,16 @@ Tune the summary footprint with `--summary-top`: raise it to see more impacted v
    secret = true
    description = "Primary Postgres DSN"
    ```
-3. Validate: `envkeep check .env --spec envkeep.toml`
-4. Diff environments: `envkeep diff .env staging.env --spec envkeep.toml`
-5. Generate example: `envkeep generate --spec envkeep.toml --output .env.example`
+3. Validate: `envkeep check .env`
+4. Diff environments: `envkeep diff .env staging.env`
+5. Generate example: `envkeep generate --output .env.example`
 
 Pipe specs directly from tooling with `--spec -` (for example, `cat envkeep.toml | envkeep check .env --spec -`) and explore metadata via `envkeep inspect --format json` when automating reviews.
 
 See [`examples/basic`](examples/basic) for a complete spec and environment pair and [`examples/socialsense`](examples/socialsense) for a multi-profile demo with bundled `.env` fixtures.
 
 ## Features
+- Automatic `envkeep.toml` discovery by searching the current and parent directories.
 - Typed spec parsing with validation for defaults, patterns, and enumerated values.
 - Human-friendly and machine-readable reports (`--format text|json`).
 - Rich inspection tooling to summarize variables and profiles (`envkeep inspect`, JSON-ready output plus resolved profile paths).
