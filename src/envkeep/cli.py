@@ -110,7 +110,6 @@ def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
 class OutputFormat(str, Enum):
     TEXT = "text"
     JSON = "json"
-    YAML = "yaml"
 
 
 def _parse_output_format(value: OutputFormat | str) -> OutputFormat:
@@ -583,6 +582,7 @@ def diff(
         output_format=fmt,
         summary_top=summary_top,
     )
+    raise typer.Exit(code=exit_code)
 
 
 @app.command()
