@@ -27,7 +27,7 @@ class ValidationIssue:
     message: str
     severity: IssueSeverity
     code: str
-    hint: str | None = None
+    hint: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,7 +83,7 @@ class ValidationReport:
             issue.variable,
             issue.code,
             issue.message,
-            issue.hint or "",
+            issue.hint,
         ),
     )
 
@@ -284,7 +284,7 @@ class ValidationReport:
                 message=item["message"],
                 severity=IssueSeverity(item["severity"]),
                 code=item["code"],
-                hint=item.get("hint"),
+                hint=item.get("hint", ""),
             )
             for item in data.get("issues", [])
         ]
