@@ -186,7 +186,15 @@ See [ROADMAP.md](ROADMAP.md) for the full backlog.
 ## Plugin System
 Envkeep supports a plugin system for fetching variables from remote backends like cloud secret managers or configuration servers.
 
-To use a plugin, first install its package (e.g., `pip install envkeep-aws-sm`). Then, in your `envkeep.toml`, add a `source` attribute to any variable you want to fetch remotely:
+### AWS Secrets Manager
+
+To use the AWS Secrets Manager backend, first install the necessary dependencies:
+
+```bash
+pip install envkeep[aws]
+```
+
+Then, in your `envkeep.toml`, add a `source` attribute to any variable you want to fetch from Secrets Manager. The source format is `aws-sm:<secret-id>`, where `<secret-id>` is the name or ARN of the secret.
 
 ```toml
 [[variables]]
@@ -196,7 +204,7 @@ secret = true
 source = "aws-sm:prod/database/url" # Fetched via the 'aws-sm' backend
 ```
 
-When you run `envkeep check`, the tool will automatically discover and invoke the appropriate plugin. Remotely fetched values take precedence over values in the local `.env` file.
+When you run `envkeep check`, the tool will automatically discover and invoke the plugin. Remotely fetched values take precedence over values in the local `.env` file.
 
 See the [plugin development guide](docs/plugins.md) for details on creating your own backends.
 
