@@ -78,6 +78,27 @@ profile_base = "config/profiles"
 
 Command-line options will always override settings in `pyproject.toml`.
 
+## Shell Completion
+
+`envkeep` supports shell completion for Bash, Zsh, and Fish. To install, run the following command for your shell:
+
+**Bash:**
+```bash
+envkeep --install-completion bash >> ~/.bashrc
+```
+
+**Zsh:**
+```bash
+envkeep --install-completion zsh >> ~/.zshrc
+```
+
+**Fish:**
+```bash
+envkeep --install-completion fish >> ~/.config/fish/completions/envkeep.fish
+```
+
+You may need to restart your shell for the changes to take effect.
+
 ## Features
 - Automatic `envkeep.toml` discovery by searching the current and parent directories.
 - Typed spec parsing with validation for defaults, patterns, and enumerated values.

@@ -56,7 +56,10 @@ if _CLICK_UNSET is None:  # pragma: no cover - Typer >=0.12 on newer Click versi
         category=DeprecationWarning,
     )
 
-app = typer.Typer(help="Deterministic environment spec and drift detection for .env workflows.")
+app = typer.Typer(
+    help="Deterministic environment spec and drift detection for .env workflows.",
+    add_completion=True,
+)
 console = Console()
 DEFAULT_OUTPUT_FORMAT = "text"
 DEFAULT_PROFILE = "all"
