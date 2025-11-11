@@ -183,9 +183,12 @@ class VariableSpec:
                 if float(normalized) > self.max_value:
                     raise ValueError(f"value must be at most {self.max_value}")
 
+    def _validate_type(self, value: str) -> str:
+        return self.var_type.normalize(value)
+
     def validate(self, value: str) -> str:
         self._validate_not_empty(value)
-        normalized = self.var_type.normalize(value)
+        normalized = self._validate_type(value)
         self._validate_choices(normalized)
         self._validate_pattern(normalized)
         self._validate_length(normalized)
