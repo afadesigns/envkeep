@@ -125,28 +125,37 @@ class EnvSnapshot:
         return key in self.values
 
 
+def _parse_line(line: str) -> tuple[str, str] | None:
+    """Parse a single line of an env file."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    match = _ENV_LINE_RE.match(stripped)
+    if not match:
+        return None
+    key = match.group("key")
+    value = match.group("value")
+    processed = _sanitize_value(value)
+    if processed is None:
+        return None
+    return key, _unescape(processed)
+
+
 def _parse_env(raw: str) -> tuple[dict[str, str], tuple[str, ...], tuple[tuple[int, str], ...]]:
     raw = strip_bom(raw)
     result: dict[str, str] = {}
     duplicates: list[str] = []
     invalid: list[tuple[int, str]] = []
     for index, line in enumerate(raw.splitlines(), start=1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        parsed = _parse_line(line)
+        if parsed is None:
+            if line.strip() and not line.strip().startswith("#"):
+                invalid.append((index, line.rstrip("\n")))
             continue
-        match = _ENV_LINE_RE.match(stripped)
-        if not match:
-            invalid.append((index, line.rstrip("\n")))
-            continue
-        key = match.group("key")
-        value = match.group("value")
-        processed = _sanitize_value(value)
-        if processed is None:
-            invalid.append((index, line.rstrip("\n")))
-            continue
+        key, value = parsed
         if key in result:
             duplicates.append(key)
-        result[key] = _unescape(processed)
+        result[key] = value
     return result, tuple(duplicates), tuple(invalid)
 
 
@@ -162,7 +171,6 @@ def _sanitize_value(value: str) -> str | None:
         while idx < len(trimmed):
             char = trimmed[idx]
             if char == "\\":
-                # Preserve escape sequences so downstream unescape keeps semantics.
                 if idx + 1 < len(trimmed):
                     buffer.append(trimmed[idx : idx + 2])
                     idx += 2
