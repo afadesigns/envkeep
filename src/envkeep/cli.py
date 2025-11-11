@@ -487,33 +487,47 @@ def check(
         "--summary-top",
         help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Disable caching of validation reports.",
+    ),
 ) -> None:
+    """Validate an environment against the specification."""
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
     env_path = str(env_file)
     spec_path_str, stdin_spec = _read_spec_input(spec)
+    spec_path = Path(spec_path_str) if spec_path_str else None
     if spec_path_str == "-" and env_path == "-":
         _usage_error("cannot read both spec and environment from stdin")
-    env_spec = load_spec(Path(spec_path_str) if spec_path_str else None, stdin_data=stdin_spec)
+    env_spec = load_spec(spec_path, stdin_data=stdin_spec)
 
-    # Fetch remote values from plugins
-    remote_values = _fetch_remote_values(env_spec)
+    cache = Cache() if not no_cache else None
 
-    if env_path == "-":
-        data = sys.stdin.read()
-        snapshot = EnvSnapshot.from_text(data, source="stdin")
-    else:
-        snapshot = EnvSnapshot.from_env_file(env_file)
+    report = cache.get_report(env_file, spec_path) if cache else None
+    if report is None:
+        # Fetch remote values from plugins
+        remote_values = _fetch_remote_values(env_spec)
 
-    # Merge local and remote values, with remote taking precedence
-    combined_values = snapshot.to_dict()
-    combined_values.update(remote_values)
+        if env_path == "-":
+            data = sys.stdin.read()
+            snapshot = EnvSnapshot.from_text(data, source="stdin")
+        else:
+            snapshot = EnvSnapshot.from_env_file(env_file)
 
-    # Create a new snapshot from the combined values for validation
-    combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
+        # Merge local and remote values, with remote taking precedence
+        combined_values = snapshot.to_dict()
+        combined_values.update(remote_values)
 
-    report = env_spec.validate(combined_snapshot, allow_extra=allow_extra)
+        # Create a new snapshot from the combined values for validation
+        combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
+
+        report = env_spec.validate(combined_snapshot, allow_extra=allow_extra)
+        if cache:
+            cache.set_report(env_file, spec_path, report)
+
     fmt = _coerce_output_format(output_format)
     exit_code = _handle_validation_output(
         report,
