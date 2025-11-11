@@ -29,6 +29,21 @@ from .utils import (
     sorted_counter,
 )
 
+try:
+    from importlib import metadata
+except ImportError:
+    import importlib_metadata as metadata
+
+__version__ = metadata.version("envkeep")
+
+
+def version_callback(value: bool):
+    if value:
+        typer.echo(f"envkeep version: {__version__}")
+        raise typer.Exit()
+
+
+
 try:  # pragma: no cover - Click 8.0 compatibility
     from click._utils import UNSET as _CLICK_UNSET  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
@@ -45,6 +60,21 @@ app = typer.Typer(help="Deterministic environment spec and drift detection for .
 console = Console()
 DEFAULT_OUTPUT_FORMAT = "text"
 DEFAULT_PROFILE = "all"
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        None,
+        "--version",
+        callback=version_callback,
+        is_eager=True,
+        help="Show the version and exit.",
+    ),
+):
+    """Callback to configure the main application context."""
+    pass
+
 
 
 def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
@@ -425,8 +455,39 @@ def check(
         "--summary-top",
         help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
     ),
+    version: bool = typer.Option(
+        None,
+        "--version",
+        callback=version_callback,
+        is_eager=True,
+        help="Show the version and exit.",
+    ),
+):
+    """Callback to configure the main application context."""
+    pass
+
+
+@app.command()
+def check(
+    env_file: Path = ENV_FILE_ARGUMENT,
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
+    output_format: str = FORMAT_OPTION_DEFAULT,
+    allow_extra: bool = typer.Option(
+        False,
+        "--allow-extra",
+        help="Allow variables not declared in the spec.",
+    ),
+    fail_on_warnings: bool = typer.Option(
+        False,
+        "--fail-on-warnings",
+        help="Treat warnings as errors for CI enforcement.",
+    ),
+    summary_top: int = typer.Option(
+        3,
+        "--summary-top",
+        help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
+    ),
 ) -> None:
-    """Validate an environment against the specification."""
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
