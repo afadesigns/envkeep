@@ -64,12 +64,12 @@ def line_number_sort_key(value: str) -> tuple[int, str]:
     return number, value
 
 
-def find_spec_path() -> Path | None:
-    """Discover the ``envkeep.toml`` path by searching the current and parent directories."""
+def find_up(filename: str) -> Path | None:
+    """Discover a file by searching the current and parent directories."""
 
     current_dir = Path.cwd()
     for directory in [current_dir, *current_dir.parents]:
-        candidate = directory / "envkeep.toml"
+        candidate = directory / filename
         if candidate.exists():
             return candidate
     return None
@@ -79,7 +79,7 @@ __all__ = [
     "BOM",
     "OptionalPath",
     "casefold_sorted",
-    "find_spec_path",
+    "find_up",
     "normalized_limit",
     "line_number_sort_key",
     "resolve_optional_path_option",

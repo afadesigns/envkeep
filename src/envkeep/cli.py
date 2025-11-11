@@ -23,7 +23,7 @@ from .spec import EnvSpec, ProfileSpec
 from .utils import (
     OptionalPath,
     casefold_sorted,
-    find_spec_path,
+    find_up,
     line_number_sort_key,
     normalized_limit,
     resolve_optional_path_option,
@@ -211,7 +211,7 @@ def _read_spec_input(spec: Path | None) -> tuple[str, str | None]:
         spec = config.spec_path
 
     if spec is None:
-        spec = find_spec_path()
+        spec = find_up("envkeep.toml")
         if spec is None:
             raise typer.BadParameter("spec file not found (envkeep.toml)")
     spec_path = str(spec)
