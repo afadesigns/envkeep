@@ -180,47 +180,28 @@ def _sanitize_value(value: str) -> str | None:
 
 
 def _strip_inline_comment(value: str) -> str:
-    in_single = False
-    in_double = False
+    in_quotes = None
     escaped = False
-    for idx, char in enumerate(value):
+    for i, char in enumerate(value):
         if escaped:
             escaped = False
             continue
         if char == "\\":
             escaped = True
             continue
-        if char == "'" and not in_double:
-            in_single = not in_single
-            continue
-        if char == '"' and not in_single:
-            in_double = not in_double
-            continue
-        if char == "#" and not in_single and not in_double:
-            return value[:idx].rstrip()
+        if in_quotes:
+            if char == in_quotes:
+                in_quotes = None
+        else:
+            if char in ('"', "'"):
+                in_quotes = char
+            elif char == "#":
+                return value[:i].rstrip()
     return value.rstrip()
 
 
+_UNESCAPE_RE = re.compile(r"\\(.)")
+
+
 def _unescape(value: str) -> str:
-    result: list[str] = []
-    idx = 0
-    length = len(value)
-    while idx < length:
-        char = value[idx]
-        if char != "\\":
-            result.append(char)
-            idx += 1
-            continue
-        idx += 1
-        if idx >= length:
-            result.append("\\")
-            break
-        escape_char = value[idx]
-        replacement = _UNESCAPE_MAP.get(escape_char)
-        if replacement is None:
-            result.append("\\")
-            result.append(escape_char)
-        else:
-            result.append(replacement)
-        idx += 1
-    return "".join(result)
+    return _UNESCAPE_RE.sub(lambda m: _UNESCAPE_MAP.get(m.group(1), m.group(1)), value)

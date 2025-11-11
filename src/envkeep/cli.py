@@ -943,7 +943,7 @@ def doctor(
             if report.has_errors or (fail_on_warnings and report.has_warnings):
                 exit_code = 1
 
-        aggregated_results = _aggregate_doctor_results(results, top_limit)
+        aggregated_results = _aggregate_doctor_results(results, top_limit)  # type: ignore[unreachable]
 
         if use_json:
             for result in results:
