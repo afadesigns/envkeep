@@ -46,26 +46,11 @@ class EnvSnapshot:
             invalid_lines=tuple(invalid_lines or ()),
         )
 
-    @classmethod
-    def from_mapping(
-        cls,
-        mapping: dict[str, str],
-        *,
-        source: str = "mapping",
-        duplicates: Iterable[str] | None = None,
-        invalid_lines: Iterable[tuple[int, str]] | None = None,
-    ) -> EnvSnapshot:
-        # Deprecated: Use from_dict instead.
-        return cls.from_dict(
-            mapping,
-            source=source,
-            duplicates=duplicates,
-            invalid_lines=invalid_lines,
-        )
+
 
     @classmethod
     def from_process(cls) -> EnvSnapshot:
-        return cls.from_mapping(dict(os.environ), source="process")
+        return cls.from_dict(dict(os.environ), source="process")
 
     @classmethod
     def from_env_file(cls, path: str | Path) -> EnvSnapshot:
