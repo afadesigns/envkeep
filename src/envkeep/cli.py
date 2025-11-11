@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import warnings
 from collections import Counter, defaultdict
@@ -15,7 +16,7 @@ from rich.table import Table
 from ._compat import tomllib
 from .cache import Cache
 from .config import load_config
-from .plugins import Backend, load_backends
+from .plugins import load_backends
 from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
 from .spec import EnvSpec, ProfileSpec
@@ -36,12 +37,13 @@ except ImportError:
 
 __version__ = metadata.version("envkeep")
 
+logger = logging.getLogger(__name__)
 
-def version_callback(value: bool):
+
+def version_callback(value: bool) -> None:
     if value:
         typer.echo(f"envkeep version: {__version__}")
         raise typer.Exit()
-
 
 
 try:  # pragma: no cover - Click 8.0 compatibility
@@ -74,10 +76,9 @@ def main(
         is_eager=True,
         help="Show the version and exit.",
     ),
-):
+) -> None:
     """Callback to configure the main application context."""
     pass
-
 
 
 def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
@@ -104,8 +105,7 @@ def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
             results = backend.fetch(sources)
             fetched_values.update(results)
         except Exception:
-            # Broadly catch exceptions from plugins to prevent them from crashing envkeep
-            pass
+            logger.exception("Plugin %s failed to fetch secrets", backend_name)
 
     return fetched_values
 
@@ -147,7 +147,10 @@ def _coerce_output_format(raw: str) -> OutputFormat:
 
 
 SPEC_OPTION = _option_with_value(
-    None, "--spec", "-s", help="Path to envkeep spec (searches parents if not specified)."
+    None,
+    "--spec",
+    "-s",
+    help="Path to envkeep spec (searches parents if not specified).",
 )
 FORMAT_OPTION = _option_with_value(
     DEFAULT_OUTPUT_FORMAT,
@@ -458,38 +461,6 @@ def check(
         "--summary-top",
         help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
     ),
-    version: bool = typer.Option(
-        None,
-        "--version",
-        callback=version_callback,
-        is_eager=True,
-        help="Show the version and exit.",
-    ),
-):
-    """Callback to configure the main application context."""
-    pass
-
-
-@app.command()
-def check(
-    env_file: Path = ENV_FILE_ARGUMENT,
-    spec: OptionalPath = SPEC_OPTION_DEFAULT,
-    output_format: str = FORMAT_OPTION_DEFAULT,
-    allow_extra: bool = typer.Option(
-        False,
-        "--allow-extra",
-        help="Allow variables not declared in the spec.",
-    ),
-    fail_on_warnings: bool = typer.Option(
-        False,
-        "--fail-on-warnings",
-        help="Treat warnings as errors for CI enforcement.",
-    ),
-    summary_top: int = typer.Option(
-        3,
-        "--summary-top",
-        help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
-    ),
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
@@ -528,7 +499,7 @@ def check(
         combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
 
         report = env_spec.validate(combined_snapshot, allow_extra=allow_extra)
-        if cache:
+        if cache and spec_path:
             cache.set_report(env_file, spec_path, report)
 
     fmt = _coerce_output_format(output_format)

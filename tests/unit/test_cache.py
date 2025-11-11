@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 import shutil
-from pathlib import Path
 import textwrap
 import time
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -31,7 +30,7 @@ def test_doctor_cache_hit_and_miss(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         [[profiles]]
         name = "test"
         env_file = "{env_file.name}"
-        """
+        """,
     )
     spec_file.write_text(spec_text, encoding="utf-8")
     env_file.write_text("MY_VAR=value1", encoding="utf-8")
@@ -48,7 +47,7 @@ def test_doctor_cache_hit_and_miss(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     # Instead, we'll rely on a crude but effective method for a unit test:
     # check the modification time of the cache file.
     spec_hash_mtime = (cache_dir / "spec.hash").stat().st_mtime
-    time.sleep(0.01) # Ensure clock tick
+    time.sleep(0.01)  # Ensure clock tick
     result2 = runner.invoke(app, ["doctor"])
     assert result2.exit_code == 0
     assert (cache_dir / "spec.hash").stat().st_mtime == spec_hash_mtime

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import logging
+from typing import TYPE_CHECKING
 
 from ..plugins import Backend
 
 if TYPE_CHECKING:
     import hvac
+
+logger = logging.getLogger(__name__)
 
 
 class VaultBackend(Backend):
@@ -19,7 +22,9 @@ class VaultBackend(Backend):
             try:
                 import hvac
             except ImportError as exc:
-                raise ImportError("hvac is not installed. Run `pip install envkeep[vault]`.") from exc
+                raise ImportError(
+                    "hvac is not installed. Run `pip install envkeep[vault]`.",
+                ) from exc
             self._client = hvac.Client()
         return self._client
 
@@ -34,17 +39,19 @@ class VaultBackend(Backend):
                 secret_path = parts[1] if len(parts) > 1 else ""
 
                 response = client.secrets.kv.v2.read_secret_version(
-                    path=secret_path, mount_point=mount_point
+                    path=secret_path,
+                    mount_point=mount_point,
                 )
                 # The secret value is in response['data']['data']
                 secret_data = response.get("data", {}).get("data", {})
                 if isinstance(secret_data, dict):
-                    # For simplicity, this backend will return the value of the *first* key found in the secret.
-                    # A more advanced implementation could allow specifying the key in the source string.
+                    # For simplicity, this backend will return the value of the
+                    # *first* key found in the secret. A more advanced
+                    # implementation could allow specifying the key in the
+                    # source string.
                     if secret_data:
                         first_key = next(iter(secret_data))
                         results[name] = secret_data[first_key]
             except Exception:
-                # Broadly catch exceptions from hvac
-                pass
+                logger.exception("Failed to fetch secret: %s", path)
         return results

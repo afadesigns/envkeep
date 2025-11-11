@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+import logging
+from typing import TYPE_CHECKING
 
 from ..plugins import Backend
 
 if TYPE_CHECKING:
     import boto3
+
+logger = logging.getLogger(__name__)
 
 
 class AwsSecretsManagerBackend(Backend):
@@ -19,7 +22,9 @@ class AwsSecretsManagerBackend(Backend):
             try:
                 import boto3
             except ImportError as exc:
-                raise ImportError("boto3 is not installed. Run `pip install envkeep[aws]`.") from exc
+                raise ImportError(
+                    "boto3 is not installed. Run `pip install envkeep[aws]`.",
+                ) from exc
             self._client = boto3.client("secretsmanager")
         return self._client
 
@@ -31,9 +36,7 @@ class AwsSecretsManagerBackend(Backend):
                 response = client.get_secret_value(SecretId=secret_id)
                 results[name] = response["SecretString"]
             except client.exceptions.ResourceNotFoundException:
-                # You might want to log this
-                pass
+                logger.warning("Secret not found: %s", secret_id)
             except Exception:
-                # Broadly catch other exceptions from boto3
-                pass
+                logger.exception("Failed to fetch secret: %s", secret_id)
         return results

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from importlib.metadata import entry_points
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class Backend(Protocol):
@@ -12,13 +15,12 @@ class Backend(Protocol):
     based on a list of source URIs defined in the envkeep spec.
     """
 
-    def fetch(self, sources: list[str]) -> dict[str, str]:
+    def fetch(self, sources: dict[str, str]) -> dict[str, str]:
         """
         Fetch values from the backend.
 
         Args:
-            sources: A list of source URIs specific to this backend.
-                     The prefix (e.g., "vault:") will be stripped.
+            sources: A dictionary mapping variable names to their source URIs.
 
         Returns:
             A dictionary mapping the variable name to its fetched value.
@@ -36,6 +38,5 @@ def load_backends() -> dict[str, Backend]:
             if callable(getattr(backend_instance, "fetch", None)):
                 backends[entry_point.name] = backend_instance
         except Exception:
-            # Ignore plugins that fail to load
-            pass
+            logger.exception("Failed to load plugin: %s", entry_point.name)
     return backends

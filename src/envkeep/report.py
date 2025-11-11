@@ -290,7 +290,6 @@ class ValidationReport:
         ]
         return cls(issues=issues)
 
-
     def summary(self, *, top_limit: int | None = None) -> dict[str, Any]:
         limit = normalized_limit(top_limit)
         return {

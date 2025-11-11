@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 import textwrap
+from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from envkeep.cli import app
@@ -25,7 +26,7 @@ def test_config_from_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         [tool.envkeep]
         spec = "{spec_file.relative_to(tmp_path)}"
         profile_base = "{profile_dir.relative_to(tmp_path)}"
-        """
+        """,
     )
     (tmp_path / "pyproject.toml").write_text(pyproject_content, encoding="utf-8")
 
@@ -40,7 +41,7 @@ def test_config_from_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         [[profiles]]
         name = "test"
         env_file = "{env_file.name}"
-        """
+        """,
     )
     spec_file.write_text(spec_text, encoding="utf-8")
     env_file.write_text("MY_VAR=value1", encoding="utf-8")

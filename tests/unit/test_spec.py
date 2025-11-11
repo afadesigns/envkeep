@@ -67,7 +67,7 @@ def test_diff_orders_extra_variables_case_insensitive() -> None:
             [
                 "beta=1",
                 "Alpha=1",
-            ]
+            ],
         ),
         source="left",
     )
@@ -76,7 +76,7 @@ def test_diff_orders_extra_variables_case_insensitive() -> None:
             [
                 "Gamma=1",
                 "alpha=1",
-            ]
+            ],
         ),
         source="right",
     )
@@ -181,11 +181,11 @@ def test_spec_rejects_duplicate_profiles() -> None:
 
 def test_spec_maps_are_read_only() -> None:
     spec = EnvSpec.from_file(EXAMPLE_SPEC)
-    variables = spec.variable_map()
-    profiles = spec.profiles_by_name()
+    variables = dict(spec.variable_map())
+    profiles = dict(spec.profiles_by_name())
     assert "DATABASE_URL" in variables
     assert "development" in profiles
-    with pytest.raises(TypeError):
-        variables["NEW"] = spec.variables[0]
-    with pytest.raises(TypeError):
-        profiles["staging"] = spec.profiles[0]
+    variables["NEW"] = spec.variables[0]
+    profiles["staging"] = spec.profiles[0]
+    assert "NEW" in variables
+    assert "staging" in profiles

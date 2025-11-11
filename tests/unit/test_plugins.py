@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import textwrap
+from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from envkeep.cli import app
@@ -37,7 +38,7 @@ def test_plugin_discovery_and_fetching(tmp_path: Path, monkeypatch: pytest.Monke
         name = "REMOTE_VAR"
         type = "string"
         source = "json:{remote_data_path}#REMOTE_VAR"
-        """
+        """,
     )
     spec_file.write_text(spec_text, encoding="utf-8")
 
@@ -61,7 +62,7 @@ def test_plugin_discovery_and_fetching(tmp_path: Path, monkeypatch: pytest.Monke
         name = "REMOTE_VAR"
         type = "int"  # This should fail as "value_from_json" is not an int
         source = "json:{remote_data_path}#REMOTE_VAR"
-        """
+        """,
     )
     spec_file.write_text(spec_text_fail, encoding="utf-8")
 

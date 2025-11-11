@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
 
 from .report import ValidationReport
 
@@ -44,7 +43,7 @@ class Cache:
 
             data = json.loads(profile_cache_file.read_text(encoding="utf-8"))
             return ValidationReport.from_dict(data)
-        except (IOError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError):
             return None
 
     def set_report(self, profile_path: Path, spec_path: Path, report: ValidationReport) -> None:
@@ -56,6 +55,6 @@ class Cache:
 
             profile_cache_file = self._root / f"{_hash_file(profile_path)}.json"
             profile_cache_file.write_text(json.dumps(report.to_dict()), encoding="utf-8")
-        except IOError:
+        except OSError:
             # If caching fails, it's not a critical error.
             pass

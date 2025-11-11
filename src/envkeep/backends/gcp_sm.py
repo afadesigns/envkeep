@@ -1,11 +1,12 @@
-from __future__ import annotations
-
+import logging
 from typing import TYPE_CHECKING
 
 from ..plugins import Backend
 
 if TYPE_CHECKING:
     from google.cloud import secretmanager
+
+logger = logging.getLogger(__name__)
 
 
 class GcpSecretManagerBackend(Backend):
@@ -20,7 +21,7 @@ class GcpSecretManagerBackend(Backend):
                 from google.cloud import secretmanager
             except ImportError as exc:
                 raise ImportError(
-                    "google-cloud-secret-manager is not installed. Run `pip install envkeep[gcp]`."
+                    "google-cloud-secret-manager is not installed. Run `pip install envkeep[gcp]`.",
                 ) from exc
             self._client = secretmanager.SecretManagerServiceClient()
         return self._client
@@ -34,6 +35,5 @@ class GcpSecretManagerBackend(Backend):
                 response = client.access_secret_version(request={"name": secret_id})
                 results[name] = response.payload.data.decode("UTF-8")
             except Exception:
-                # Broadly catch exceptions from the gcloud client
-                pass
+                logger.exception("Failed to fetch secret: %s", secret_id)
         return results

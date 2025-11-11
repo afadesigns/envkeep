@@ -49,5 +49,5 @@ def load_config() -> Config:
         envkeep_config = data.get("tool", {}).get("envkeep", {})
         project_root = pyproject_path.parent
         return Config.from_dict(envkeep_config, project_root)
-    except (IOError, tomllib.TOMLDecodeError):
+    except (OSError, tomllib.TOMLDecodeError):
         return Config()

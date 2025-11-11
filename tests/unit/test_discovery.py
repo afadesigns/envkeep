@@ -30,7 +30,8 @@ def test_cli_check_discovers_spec_in_cwd(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_cli_check_discovers_spec_in_parent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     spec_file = tmp_path / "envkeep.toml"
@@ -50,7 +51,8 @@ def test_cli_check_discovers_spec_in_parent(
 
 
 def test_cli_check_fails_when_no_spec_found(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     env_file = tmp_path / ".env.dev"
@@ -63,7 +65,8 @@ def test_cli_check_fails_when_no_spec_found(
 
 
 def test_cli_spec_option_overrides_discovery(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     # Create a dummy spec in the current directory that would cause a failure
