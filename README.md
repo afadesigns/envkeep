@@ -33,6 +33,9 @@ Changed
 └───────────────┴─────────┴─────────────────────┴─────────────────┘
 Changed: 4 · Impacted: ALLOWED_HOSTS, API_TOKEN, DATABASE_URL
 Total differences: 4
+
+$ envkeep generate --output .env.example
+Wrote example to .env.example
 ```
 
 Tune the summary footprint with `--summary-top`: raise it to see more impacted variables or set it to `0` to hide the list entirely (available on `check`, `diff`, and `doctor`).
