@@ -35,7 +35,9 @@ def load_backends() -> dict[str, Backend]:
     for entry_point in entry_points(group="envkeep.backends"):
         try:
             backend_instance = entry_point.load()()
-            if callable(getattr(backend_instance, "fetch", None)):
+            if isinstance(backend_instance, Backend) and callable(
+                getattr(backend_instance, "fetch", None)
+            ):
                 backends[entry_point.name] = backend_instance
         except Exception:
             logger.exception("Failed to load plugin: %s", entry_point.name)
