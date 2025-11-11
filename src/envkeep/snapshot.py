@@ -46,8 +46,6 @@ class EnvSnapshot:
             invalid_lines=tuple(invalid_lines or ()),
         )
 
-
-
     @classmethod
     def from_process(cls) -> EnvSnapshot:
         return cls.from_dict(dict(os.environ), source="process")

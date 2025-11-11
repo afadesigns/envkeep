@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 from importlib.metadata import entry_points
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
 
+@runtime_checkable
 class Backend(Protocol):
     """
     Protocol for a secrets backend plugin.
@@ -36,7 +37,7 @@ def load_backends() -> dict[str, Backend]:
         try:
             backend_instance = entry_point.load()()
             if isinstance(backend_instance, Backend) and callable(
-                getattr(backend_instance, "fetch", None)
+                getattr(backend_instance, "fetch", None),
             ):
                 backends[entry_point.name] = backend_instance
         except Exception:

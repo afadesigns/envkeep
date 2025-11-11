@@ -6,6 +6,7 @@ import sys
 import warnings
 from collections import Counter, defaultdict
 from enum import Enum
+from importlib import metadata
 from pathlib import Path
 from typing import Any, cast
 
@@ -30,8 +31,6 @@ from .utils import (
     sorted_counter,
 )
 
-from importlib import metadata
-
 __version__ = metadata.version("envkeep")
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,7 @@ def version_callback(value: bool) -> None:
 
 
 try:  # pragma: no cover - Click 8.0 compatibility
-    from click._utils import UNSET as _CLICK_UNSET  # type: ignore[import-not-found]
+    from click._utils import UNSET as _CLICK_UNSET
 except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
     _CLICK_UNSET = None
 
@@ -64,7 +63,7 @@ DEFAULT_OUTPUT_FORMAT = "text"
 DEFAULT_PROFILE = "all"
 
 
-@app.callback()
+@app.callback()  # type: ignore[misc]
 def main(
     version: bool = typer.Option(
         None,
@@ -449,7 +448,7 @@ def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
         path = config.spec_path
 
     if path is None:
-        path = find_spec_path()
+        path = find_up("envkeep.toml")
         if path is None:
             raise typer.BadParameter("spec file not found (envkeep.toml)")
 
@@ -466,7 +465,7 @@ def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
     return base_spec
 
 
-@app.command()
+@app.command()  # type: ignore[misc]
 def check(
     env_file: Path = ENV_FILE_ARGUMENT,
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
@@ -538,7 +537,7 @@ def check(
     raise typer.Exit(code=exit_code)
 
 
-@app.command()
+@app.command()  # type: ignore[misc]
 def diff(
     first: Path = DIFF_FIRST_ARGUMENT,
     second: Path = DIFF_SECOND_ARGUMENT,
@@ -585,7 +584,7 @@ def diff(
     raise typer.Exit(code=exit_code)
 
 
-@app.command()
+@app.command()  # type: ignore[misc]
 def generate(
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
     output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
@@ -608,7 +607,7 @@ def generate(
         typer.echo(content)
 
 
-@app.command()
+@app.command()  # type: ignore[misc]
 def inspect(
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
     output_format: str = FORMAT_OPTION_DEFAULT,
@@ -820,7 +819,7 @@ def _render_doctor_text_summary(
             console.print(f"  • {name}: {env_file_raw} -> {resolved_path}{status}")
 
 
-@app.command()
+@app.command()  # type: ignore[misc]
 def doctor(
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
     profile: str = PROFILE_OPTION_DEFAULT,
@@ -971,7 +970,7 @@ def doctor(
             top_limit,
             resolved_profile_records,
         )
-    raise typer.Exit(code=exit_code)
+    raise typer.Exit(code=exit_code)  # type: ignore[unreachable]
 
 
 def render_validation_report(

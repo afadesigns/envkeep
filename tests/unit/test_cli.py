@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import tempfile
 import textwrap
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 import typer
@@ -226,8 +226,9 @@ def test_cli_doctor_resolves_relative_profiles(
             "doctor",
             "--spec",
             str(spec_file),
-                            "--profile-base",
-                            str(spec_dir),        ],
+            "--profile-base",
+            str(spec_dir),
+        ],
     )
     print(result.output)
     assert result.exit_code == 0
@@ -610,7 +611,7 @@ def test_cli_check_json_summary_reports_issue_flags(tmp_path: Path) -> None:
     report_payload = payload["report"]
     assert report_payload["issue_count"] == summary["issue_count"]
     assert report_payload["variables"]
-    assert report_payload[ "most_common_codes"][0][0] in {"duplicate", "extra"}
+    assert report_payload["most_common_codes"][0][0] in {"duplicate", "extra"}
     assert report_payload["top_variables"]
 
 
@@ -724,8 +725,7 @@ def test_cli_doctor_reports_summary(tmp_path: Path, patch_config: MagicMock) -> 
     assert "Total warnings: 0" in result.stdout
     assert "Total info: 0" in result.stdout
     assert (
-        "Warnings breakdown: Duplicates: 0 · Extra variables: 0 · Invalid lines: 0"
-        in result.stdout
+        "Warnings breakdown: Duplicates: 0 · Extra variables: 0 · Invalid lines: 0" in result.stdout
     )
     assert "Impacted variables:" in result.stdout
     dev_env_str = str(dev_env)
@@ -1005,12 +1005,17 @@ def test_cli_inspect_json_output(patch_config: MagicMock) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["summary"]["version"] == 1
-    assert Path(payload["profile_base_dir"]).resolve() == patch_config.return_value.project_root.resolve()
+    assert (
+        Path(payload["profile_base_dir"]).resolve()
+        == patch_config.return_value.project_root.resolve()
+    )
     first_variable = payload["variables"][0]
     assert first_variable["name"] == "DATABASE_URL"
     assert "profiles" in payload
     first_profile = payload["profiles"][0]
-    expected_path = (patch_config.return_value.project_root / Path(first_profile["env_file"]).expanduser()).resolve()
+    expected_path = (
+        patch_config.return_value.project_root / Path(first_profile["env_file"]).expanduser()
+    ).resolve()
     assert first_profile["resolved_env_file"] == str(expected_path)
 
 
@@ -1144,7 +1149,12 @@ def test_cli_diff_json_output(tmp_path: Path) -> None:
     assert payload["summary"]
     assert payload["summary"]["by_kind"]["changed"] == 4
     assert payload["summary"]["non_empty_kinds"] == ["changed"]
-    assert payload["summary"]["variables"] == ["ALLOWED_HOSTS", "API_TOKEN", "DATABASE_URL", "DEBUG"]
+    assert payload["summary"]["variables"] == [
+        "ALLOWED_HOSTS",
+        "API_TOKEN",
+        "DATABASE_URL",
+        "DEBUG",
+    ]
     assert payload["summary"]["top_variables"][0][0] == "ALLOWED_HOSTS"
     report_payload = payload["report"]
     assert report_payload["is_clean"] is False
