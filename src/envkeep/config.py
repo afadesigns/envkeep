@@ -11,11 +11,12 @@ from ._compat import tomllib
 class Config:
     """Represents envkeep configuration loaded from pyproject.toml."""
 
+    project_root: Path | None = None
     spec_path: Path | None = None
     profile_base: Path | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], project_root: Path) -> Config:
+    def from_dict(cls, data: dict[str, Any], *, project_root: Path) -> Config:
         """Create a Config instance from a dictionary."""
         spec_path_str = data.get("spec")
         profile_base_str = data.get("profile_base")
@@ -23,7 +24,11 @@ class Config:
         spec_path = (project_root / spec_path_str).resolve() if spec_path_str else None
         profile_base = (project_root / profile_base_str).resolve() if profile_base_str else None
 
-        return cls(spec_path=spec_path, profile_base=profile_base)
+        return cls(
+            project_root=project_root,
+            spec_path=spec_path,
+            profile_base=profile_base,
+        )
 
 
 def find_pyproject_toml(start_dir: Path | None = None) -> Path | None:
@@ -48,6 +53,6 @@ def load_config() -> Config:
             data = tomllib.load(f)
         envkeep_config = data.get("tool", {}).get("envkeep", {})
         project_root = pyproject_path.parent
-        return Config.from_dict(envkeep_config, project_root)
+        return Config.from_dict(envkeep_config, project_root=project_root)
     except (OSError, tomllib.TOMLDecodeError):
         return Config()

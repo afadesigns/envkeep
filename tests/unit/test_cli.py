@@ -187,10 +187,11 @@ def test_cli_generate_accepts_spec_from_stdin() -> None:
 def test_cli_doctor_resolves_relative_profiles(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    patch_config: MagicMock,
 ) -> None:
-    spec_dir = tmp_path / "spec"
-    env_dir = tmp_path / "env"
-    home_dir = tmp_path / "home"
+    spec_dir = patch_config.return_value.project_root / "spec"
+    env_dir = patch_config.return_value.project_root / "env"
+    home_dir = patch_config.return_value.project_root / "home"
     spec_dir.mkdir()
     env_dir.mkdir()
     home_dir.mkdir()
@@ -219,7 +220,16 @@ def test_cli_doctor_resolves_relative_profiles(
         ),
         encoding="utf-8",
     )
-    result = runner.invoke(app, ["doctor", "--spec", str(spec_file)])
+    result = runner.invoke(
+        app,
+        [
+            "doctor",
+            "--spec",
+            str(spec_file),
+                            "--profile-base",
+                            str(spec_dir),        ],
+    )
+    print(result.output)
     assert result.exit_code == 0
     assert "All checks passed" in result.stdout
 
@@ -289,8 +299,8 @@ def test_cli_doctor_all(tmp_path: Path) -> None:
     assert "missing env file" in result.stdout
 
 
-def test_cli_doctor_json_output(tmp_path: Path) -> None:
-    env_file = tmp_path / "dev.env"
+def test_cli_doctor_json_output(tmp_path: Path, patch_config: MagicMock) -> None:
+    env_file = patch_config.return_value.project_root / "dev.env"
     env_file.write_text(DEV_ENV.read_text(), encoding="utf-8")
     spec_text = (
         EXAMPLE_SPEC.read_text()
@@ -600,7 +610,7 @@ def test_cli_check_json_summary_reports_issue_flags(tmp_path: Path) -> None:
     report_payload = payload["report"]
     assert report_payload["issue_count"] == summary["issue_count"]
     assert report_payload["variables"]
-    assert report_payload["most_common_codes"][0][0] in {"duplicate", "extra"}
+    assert report_payload[ "most_common_codes"][0][0] in {"duplicate", "extra"}
     assert report_payload["top_variables"]
 
 
@@ -695,8 +705,8 @@ def test_cli_doctor_text_highlights_impacted_variables(tmp_path: Path) -> None:
     assert "Top impacted variables:" in result.stdout
 
 
-def test_cli_doctor_reports_summary(tmp_path: Path) -> None:
-    dev_env = tmp_path / "dev.env"
+def test_cli_doctor_reports_summary(tmp_path: Path, patch_config: MagicMock) -> None:
+    dev_env = patch_config.return_value.project_root / "dev.env"
     dev_env.write_text(DEV_ENV.read_text(), encoding="utf-8")
     spec_text = (
         EXAMPLE_SPEC.read_text(encoding="utf-8")
@@ -979,13 +989,15 @@ def test_cli_diff_rejects_spec_and_env_stdin(tmp_path: Path) -> None:
     assert "cannot combine spec from stdin" in result.stderr
 
 
-def test_cli_inspect_json_output() -> None:
+def test_cli_inspect_json_output(patch_config: MagicMock) -> None:
+    spec_file = patch_config.return_value.project_root / "envkeep.toml"
+    spec_file.write_text(EXAMPLE_SPEC.read_text(), encoding="utf-8")
     result = runner.invoke(
         app,
         [
             "inspect",
             "--spec",
-            str(EXAMPLE_SPEC),
+            str(spec_file),
             "--format",
             "json",
         ],
@@ -993,50 +1005,49 @@ def test_cli_inspect_json_output() -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["summary"]["version"] == 1
-    assert Path(payload["profile_base_dir"]).resolve() == EXAMPLE_SPEC.parent.resolve()
+    assert Path(payload["profile_base_dir"]).resolve() == patch_config.return_value.project_root.resolve()
     first_variable = payload["variables"][0]
     assert first_variable["name"] == "DATABASE_URL"
     assert "profiles" in payload
     first_profile = payload["profiles"][0]
-    expected_path = (EXAMPLE_SPEC.parent / Path(first_profile["env_file"]).expanduser()).resolve()
+    expected_path = (patch_config.return_value.project_root / Path(first_profile["env_file"]).expanduser()).resolve()
     assert first_profile["resolved_env_file"] == str(expected_path)
 
 
-def test_cli_inspect_text_shows_resolved_paths() -> None:
-    with tempfile.TemporaryDirectory(prefix="ek-") as tmpdir:
-        base = Path(tmpdir)
-        env_dir = base / "env"
-        env_dir.mkdir()
-        env_file = env_dir / "app.env"
-        env_file.write_text("FOO=value\n", encoding="utf-8")
-        spec_text = textwrap.dedent(
-            """
-            version = 1
+def test_cli_inspect_text_shows_resolved_paths(patch_config: MagicMock) -> None:
+    base = patch_config.return_value.project_root
+    env_dir = base / "env"
+    env_dir.mkdir()
+    env_file = env_dir / "app.env"
+    env_file.write_text("FOO=value\n", encoding="utf-8")
+    spec_text = textwrap.dedent(
+        """
+        version = 1
 
-            [[variables]]
-            name = "FOO"
+        [[variables]]
+        name = "FOO"
 
-            [[profiles]]
-            name = "app"
-            env_file = "env/app.env"
-            description = "Primary"
-            """,
-        )
-        spec_file = base / "envkeep.toml"
-        spec_file.write_text(spec_text, encoding="utf-8")
-        result = runner.invoke(
-            app,
-            [
-                "inspect",
-                "--spec",
-                str(spec_file),
-                "--format",
-                "json",
-            ],
-        )
-        assert result.exit_code == 0
-        payload = json.loads(result.stdout)
-        assert payload["profiles"][0]["resolved_env_file"] == str(env_file.resolve())
+        [[profiles]]
+        name = "app"
+        env_file = "env/app.env"
+        description = "Primary"
+        """,
+    )
+    spec_file = base / "envkeep.toml"
+    spec_file.write_text(spec_text, encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "inspect",
+            "--spec",
+            str(spec_file),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["profiles"][0]["resolved_env_file"] == str(env_file.resolve())
 
 
 def test_cli_inspect_profile_base_override(tmp_path: Path) -> None:

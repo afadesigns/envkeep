@@ -622,7 +622,10 @@ def inspect(
     spec_path_str, stdin_spec = _read_spec_input(spec_path_resolved)
     spec_path = Path(spec_path_str)
     spec_base = _spec_base_dir(spec_path)
-    profile_base_dir = _resolve_profile_base_dir(profile_base_path, default_base=spec_base)
+    profile_base_dir = _resolve_profile_base_dir(
+        profile_base_path,
+        default_base=config.project_root or spec_base,
+    )
     env_spec = load_spec(Path(spec_path_str) if spec_path_str else None, stdin_data=stdin_spec)
     fmt = _coerce_output_format(output_format)
     if fmt is OutputFormat.JSON:
@@ -856,7 +859,10 @@ def doctor(
     spec_path_str, stdin_spec = _read_spec_input(spec_path_resolved)
     spec_path = Path(spec_path_str)
     spec_base = _spec_base_dir(spec_path)
-    profile_base_dir = _resolve_profile_base_dir(profile_base_path, default_base=spec_base)
+    profile_base_dir = _resolve_profile_base_dir(
+        profile_base_path,
+        default_base=config.project_root or spec_base,
+    )
     env_spec = load_spec(Path(spec_path_str) if spec_path_str else None, stdin_data=stdin_spec)
     profiles = list(env_spec.iter_profiles())
     if not profiles:
