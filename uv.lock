@@ -405,6 +405,7 @@ aws = [
 ]
 dev = [
     { name = "boto3-stubs", extra = ["secretsmanager"] },
+    { name = "hvac" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -422,12 +423,17 @@ release = [
     { name = "build" },
     { name = "twine" },
 ]
+vault = [
+    { name = "hvac" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.34" },
     { name = "boto3-stubs", extras = ["secretsmanager"], marker = "extra == 'dev'" },
     { name = "build", marker = "extra == 'release'", specifier = ">=1.2" },
+    { name = "hvac", marker = "extra == 'dev'", specifier = ">=2.1" },
+    { name = "hvac", marker = "extra == 'vault'", specifier = ">=2.1" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24" },
@@ -442,7 +448,7 @@ requires-dist = [
     { name = "twine", marker = "extra == 'release'", specifier = ">=5.1" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["aws", "dev", "docs", "release"]
+provides-extras = ["aws", "vault", "dev", "docs", "release"]
 
 [[package]]
 name = "filelock"
@@ -475,6 +481,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ec/d7/6c09dd7ce4c7837e4cdb11dce980cb45ae3cd87677298dc3b781b6bce7d3/griffe-1.14.0.tar.gz", hash = "sha256:9d2a15c1eca966d68e00517de5d69dd1bc5c9f2335ef6c1775362ba5b8651a13", size = 424684, upload-time = "2025-09-05T15:02:29.167Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/b1/9ff6578d789a89812ff21e4e0f80ffae20a65d5dd84e7a17873fe3b365be/griffe-1.14.0-py3-none-any.whl", hash = "sha256:0e9d52832cccf0f7188cfe585ba962d2674b241c01916d780925df34873bceb0", size = 144439, upload-time = "2025-09-05T15:02:27.511Z" },
+]
+
+[[package]]
+name = "hvac"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e2/57/b46c397fb3842cfb02a44609aa834c887f38dd75f290c2fc5a34da4b2fee/hvac-2.4.0.tar.gz", hash = "sha256:e0056ad9064e7923e874e6769015b032580b639e29246f5ab1044f7959c1c7e0", size = 332543, upload-time = "2025-10-30T12:57:47.512Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/33/71e45a6bd6875f44a26f99da31c63b6840123e88bedf2c0b1ce429b8be12/hvac-2.4.0-py3-none-any.whl", hash = "sha256:008db5efd8c2f77bd37d2368ea5f713edceae1c65f11fd608393179478649e0f", size = 155921, upload-time = "2025-10-30T12:57:46.253Z" },
 ]
 
 [[package]]

@@ -232,6 +232,25 @@ secret = true
 source = "aws-sm:prod/database/url" # Fetched via the 'aws-sm' backend
 ```
 
+### HashiCorp Vault
+
+To use the HashiCorp Vault backend, first install the necessary dependencies:
+
+```bash
+pip install envkeep[vault]
+```
+
+The Vault backend authenticates using the `VAULT_ADDR` and `VAULT_TOKEN` environment variables. Make sure these are set in your environment before running `envkeep`.
+
+In your `envkeep.toml`, add a `source` attribute with the format `vault:<mount-point>/<secret-path>`. This backend assumes you are using a KVv2 secrets engine.
+
+```toml
+[[variables]]
+name = "API_KEY"
+secret = true
+source = "vault:kv/data/api-keys" # Fetched via the 'vault' backend
+```
+
 When you run `envkeep check`, the tool will automatically discover and invoke the plugin. Remotely fetched values take precedence over values in the local `.env` file.
 
 See the [plugin development guide](docs/plugins.md) for details on creating your own backends.
