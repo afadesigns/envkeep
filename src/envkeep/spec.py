@@ -324,8 +324,13 @@ class EnvSpec:
         self._check_for_invalid_lines(snapshot, report)
         return report
 
-    def diff(self, left: EnvSnapshot, right: EnvSnapshot) -> DiffReport:
-        report = DiffReport()
+    def _compare_variables(
+        self,
+        left: EnvSnapshot,
+        right: EnvSnapshot,
+        report: DiffReport,
+    ) -> None:
+        """Compare variables between two snapshots."""
         variables = self.variable_map()
         for name, spec in variables.items():
             left_val = left.get(name)
@@ -381,6 +386,15 @@ class EnvSpec:
                         secret=spec.secret,
                     ),
                 )
+
+    def _handle_extra_variables(
+        self,
+        left: EnvSnapshot,
+        right: EnvSnapshot,
+        report: DiffReport,
+    ) -> None:
+        """Handle extra variables in both snapshots."""
+        variables = self.variable_map()
         left_extra = set(left.keys()) - variables.keys()
         right_extra = set(right.keys()) - variables.keys()
         for key in casefold_sorted(left_extra):
@@ -403,6 +417,11 @@ class EnvSpec:
                     secret=False,
                 ),
             )
+
+    def diff(self, left: EnvSnapshot, right: EnvSnapshot) -> DiffReport:
+        report = DiffReport()
+        self._compare_variables(left, right, report)
+        self._handle_extra_variables(left, right, report)
         return report
 
     def generate_example(self, *, redact_secrets: bool = True) -> str:
