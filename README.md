@@ -171,6 +171,34 @@ envkeep doctor --no-cache
 
 The `diff` command compares two environment files, using the spec to normalize values and identify meaningful differences. This is useful for comparing local changes against a deployed environment.
 
+## GitHub Action
+
+You can use `envkeep` in your GitHub Actions workflows to automatically validate environment profiles on pull requests. Create a file named `.github/workflows/envkeep.yml` with the following content:
+
+```yaml
+name: Envkeep CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-profiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install envkeep
+        run: pip install envkeep
+      - name: Run envkeep doctor
+        run: envkeep doctor --fail-on-warnings
+```
+
+This workflow will run on every pull request to the `main` branch and will fail if any of the profiles have errors or warnings.
+
 ## Architecture
 - `envkeep.toml` defines variables, metadata, and environment profiles.
 - The core library normalizes values, produces validation reports, and renders diffs.
