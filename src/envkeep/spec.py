@@ -339,6 +339,76 @@ class EnvSpec:
         self._check_for_invalid_lines(snapshot, report)
         return report
 
+    def _add_extra_variable_diff(
+        self,
+        name: str,
+        spec: VariableSpec,
+        right_val: str,
+        report: DiffReport,
+    ) -> None:
+        """Add a diff entry for an extra variable."""
+        report.add(
+            DiffEntry(
+                variable=name,
+                kind=DiffKind.EXTRA,
+                left=None,
+                right=spec.normalize(right_val),
+                secret=spec.secret,
+            ),
+        )
+
+    def _add_missing_variable_diff(
+        self,
+        name: str,
+        spec: VariableSpec,
+        left_val: str,
+        report: DiffReport,
+    ) -> None:
+        """Add a diff entry for a missing variable."""
+        report.add(
+            DiffEntry(
+                variable=name,
+                kind=DiffKind.MISSING,
+                left=spec.normalize(left_val),
+                right=None,
+                secret=spec.secret,
+            ),
+        )
+
+    def _add_changed_variable_diff(
+        self,
+        name: str,
+        spec: VariableSpec,
+        left_val: str,
+        right_val: str,
+        report: DiffReport,
+    ) -> None:
+        """Add a diff entry for a changed variable."""
+        try:
+            left_normalized = spec.normalize(left_val)
+            right_normalized = spec.normalize(right_val)
+        except ValueError:
+            report.add(
+                DiffEntry(
+                    variable=name,
+                    kind=DiffKind.CHANGED,
+                    left=left_val,
+                    right=right_val,
+                    secret=spec.secret,
+                ),
+            )
+            return
+        if left_normalized != right_normalized:
+            report.add(
+                DiffEntry(
+                    variable=name,
+                    kind=DiffKind.CHANGED,
+                    left=left_normalized,
+                    right=right_normalized,
+                    secret=spec.secret,
+                ),
+            )
+
     def _compare_variables(
         self,
         left: EnvSnapshot,
@@ -353,54 +423,13 @@ class EnvSpec:
             if left_val is None and right_val is None:
                 continue
             if left_val is None:
-                if right_val is None:
-                    continue
-                report.add(
-                    DiffEntry(
-                        variable=name,
-                        kind=DiffKind.EXTRA,
-                        left=None,
-                        right=spec.normalize(right_val),
-                        secret=spec.secret,
-                    ),
-                )
+                if right_val is not None:
+                    self._add_extra_variable_diff(name, spec, right_val, report)
                 continue
             if right_val is None:
-                report.add(
-                    DiffEntry(
-                        variable=name,
-                        kind=DiffKind.MISSING,
-                        left=spec.normalize(left_val),
-                        right=None,
-                        secret=spec.secret,
-                    ),
-                )
+                self._add_missing_variable_diff(name, spec, left_val, report)
                 continue
-            try:
-                left_normalized = spec.normalize(left_val)
-                right_normalized = spec.normalize(right_val)
-            except ValueError:
-                # Treat normalization errors as changes without exposing raw secret material.
-                report.add(
-                    DiffEntry(
-                        variable=name,
-                        kind=DiffKind.CHANGED,
-                        left=left_val,
-                        right=right_val,
-                        secret=spec.secret,
-                    ),
-                )
-                continue
-            if left_normalized != right_normalized:
-                report.add(
-                    DiffEntry(
-                        variable=name,
-                        kind=DiffKind.CHANGED,
-                        left=left_normalized,
-                        right=right_normalized,
-                        secret=spec.secret,
-                    ),
-                )
+            self._add_changed_variable_diff(name, spec, left_val, right_val, report)
 
     def _handle_extra_variables(
         self,
