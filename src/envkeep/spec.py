@@ -155,18 +155,25 @@ class VariableSpec:
             instance.validate(default)
         return instance
 
-    def validate(self, value: str) -> str:
+    def _validate_not_empty(self, value: str) -> None:
         if not value and not self.allow_empty:
             raise ValueError("value may not be empty")
-        normalized = self.var_type.normalize(value)
+
+    def _validate_choices(self, normalized: str) -> None:
         if self.choices and normalized not in self.choices:
             raise ValueError(f"value must be one of {self.choices}")
+
+    def _validate_pattern(self, normalized: str) -> None:
         if self.pattern and not self.pattern.fullmatch(normalized):
             raise ValueError("value does not match pattern")
+
+    def _validate_length(self, normalized: str) -> None:
         if self.min_length is not None and len(normalized) < self.min_length:
             raise ValueError(f"length must be at least {self.min_length}")
         if self.max_length is not None and len(normalized) > self.max_length:
             raise ValueError(f"length must be at most {self.max_length}")
+
+    def _validate_value_range(self, normalized: str) -> None:
         if self.min_value is not None:
             if self.var_type in (VariableType.INT, VariableType.FLOAT):
                 if float(normalized) < self.min_value:
@@ -175,6 +182,14 @@ class VariableSpec:
             if self.var_type in (VariableType.INT, VariableType.FLOAT):
                 if float(normalized) > self.max_value:
                     raise ValueError(f"value must be at most {self.max_value}")
+
+    def validate(self, value: str) -> str:
+        self._validate_not_empty(value)
+        normalized = self.var_type.normalize(value)
+        self._validate_choices(normalized)
+        self._validate_pattern(normalized)
+        self._validate_length(normalized)
+        self._validate_value_range(normalized)
         return normalized
 
     def normalize(self, value: str) -> str:
