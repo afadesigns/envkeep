@@ -1,5 +1,9 @@
 """Envkeep public API."""
 
+from importlib import metadata
+
+__version__ = metadata.version("envkeep")
+
 from .report import (
     DiffEntry,
     DiffKind,
@@ -23,4 +27,5 @@ __all__ = [
     "IssueSeverity",
     "DiffEntry",
     "DiffReport",
+    "__version__",
 ]

@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
+from . import __version__
 from .report import ValidationReport
+
+logger = logging.getLogger(__name__)
 
 
 def _hash_file(path: Path) -> str:
@@ -33,7 +37,7 @@ class Cache:
 
         try:
             cached_spec_hash = self._spec_hash_file.read_text(encoding="utf-8")
-            current_spec_hash = _hash_file(spec_path)
+            current_spec_hash = f"{_hash_file(spec_path)}:{__version__}"
             if cached_spec_hash != current_spec_hash:
                 return None  # Spec has changed, cache is invalid
 
@@ -43,18 +47,22 @@ class Cache:
 
             data = json.loads(profile_cache_file.read_text(encoding="utf-8"))
             return ValidationReport.from_dict(data)
-        except (OSError, json.JSONDecodeError):
+        except FileNotFoundError:
+            return None  # Cache directory or spec hash file not found
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning("Failed to read cache: %s", e)
             return None
 
     def set_report(self, profile_path: Path, spec_path: Path, report: ValidationReport) -> None:
         """Cache a validation report."""
         self._ensure_dir()
         try:
-            current_spec_hash = _hash_file(spec_path)
+            current_spec_hash = f"{_hash_file(spec_path)}:{__version__}"
             self._spec_hash_file.write_text(current_spec_hash, encoding="utf-8")
 
             profile_cache_file = self._root / f"{_hash_file(profile_path)}.json"
             profile_cache_file.write_text(json.dumps(report.to_dict()), encoding="utf-8")
-        except OSError:
+        except OSError as e:
             # If caching fails, it's not a critical error.
+            logger.warning("Failed to write cache: %s", e)
             pass

@@ -6,7 +6,6 @@ import sys
 import warnings
 from collections import Counter, defaultdict
 from enum import Enum
-from importlib import metadata
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,6 +13,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from . import __version__
 from ._compat import tomllib
 from .cache import Cache
 from .config import load_config
@@ -30,8 +30,6 @@ from .utils import (
     resolve_optional_path_option,
     sorted_counter,
 )
-
-__version__ = metadata.version("envkeep")
 
 logger = logging.getLogger(__name__)
 
