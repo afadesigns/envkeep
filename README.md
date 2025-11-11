@@ -78,6 +78,32 @@ profile_base = "config/profiles"
 
 Command-line options will always override settings in `pyproject.toml`.
 
+## Hierarchical Specs
+
+`envkeep` supports splitting your specifications across multiple files using the `imports` key. This allows you to create a base spec and extend it in other specs, promoting reuse and better organization.
+
+**Example `base.toml`:**
+
+```toml
+[[variables]]
+name = "DATABASE_URL"
+type = "url"
+required = true
+secret = true
+```
+
+**Example `envkeep.toml`:**
+
+```toml
+imports = ["base.toml"]
+
+[[variables]]
+name = "API_KEY"
+secret = true
+```
+
+When you run `envkeep`, it will load `envkeep.toml`, see the `imports` key, and then load `base.toml`. The variables and profiles from `base.toml` will be merged into the main spec. If a variable or profile is defined in both the main spec and an imported spec, the definition in the main spec will take precedence.
+
 ## Validation Rules
 
 In addition to types, `envkeep` supports several other validation rules:
