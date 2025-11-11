@@ -675,6 +675,120 @@ def inspect(
     console.print(table)
 
 
+def _aggregate_doctor_results(
+    results: list[dict[str, Any]],
+    top_limit: int,
+) -> dict[str, Any]:
+    """Aggregate results from multiple doctor reports."""
+    total_errors = 0
+    total_warnings = 0
+    total_info = 0
+    aggregate_warning_counts = {
+        "duplicates": 0,
+        "extra_variables": 0,
+        "invalid_lines": 0,
+    }
+    aggregate_issue_variables: set[str] = set()
+    aggregated_codes: Counter[str] = Counter()
+    aggregated_variables: set[str] = set()
+    aggregated_variable_counts: Counter[str] = Counter()
+
+    for item in results:
+        report = item.get("report")
+        if not report:
+            continue
+
+        severity_totals = report.severity_totals()
+        total_errors += severity_totals[IssueSeverity.ERROR.value]
+        total_warnings += severity_totals[IssueSeverity.WARNING.value]
+        total_info += severity_totals[IssueSeverity.INFO.value]
+
+        warnings_summary = report.warning_summary()
+        aggregate_warning_counts["duplicates"] += len(warnings_summary["duplicates"])
+        aggregate_warning_counts["extra_variables"] += len(warnings_summary["extra_variables"])
+        aggregate_warning_counts["invalid_lines"] += len(warnings_summary["invalid_lines"])
+
+        full_summary = report.summary()
+        aggregate_issue_variables.update(full_summary.get("variables", []))
+        aggregated_codes.update(full_summary.get("codes", {}))
+        aggregated_variables.update(full_summary.get("variables", ()))
+        for variable, count in full_summary.get("top_variables", []):
+            aggregated_variable_counts[variable] += count
+
+    aggregated_most_common_codes = sorted_counter(aggregated_codes)
+    aggregated_top_variables = sorted_counter(aggregated_variable_counts)
+    if top_limit == 0:
+        aggregated_most_common_codes = []
+        aggregated_top_variables = []
+    else:
+        aggregated_most_common_codes = aggregated_most_common_codes[:top_limit]
+        aggregated_top_variables = aggregated_top_variables[:top_limit]
+
+    return {
+        "total_errors": total_errors,
+        "total_warnings": total_warnings,
+        "total_info": total_info,
+        "aggregate_warning_counts": aggregate_warning_counts,
+        "aggregate_issue_variables": aggregate_issue_variables,
+        "aggregated_most_common_codes": aggregated_most_common_codes,
+        "aggregated_top_variables": aggregated_top_variables,
+        "aggregated_variables_list": casefold_sorted(aggregated_variables),
+    }
+
+
+def _render_doctor_text_summary(
+    checked_profiles: int,
+    selected_profiles: int,
+    missing_profiles: int,
+    aggregated_results: dict[str, Any],
+    top_limit: int,
+    resolved_profile_records: list[tuple[str, str, Path, bool]],
+) -> None:
+    """Render the text summary for the doctor command."""
+    console.rule("Doctor Summary")
+    console.print(f"Profiles checked: {checked_profiles}/{selected_profiles}")
+    console.print(
+        " · ".join(
+            [
+                f"Missing profiles: {missing_profiles}",
+                f"Total errors: {aggregated_results['total_errors']}",
+                f"Total warnings: {aggregated_results['total_warnings']}",
+                f"Total info: {aggregated_results['total_info']}",
+            ],
+        ),
+    )
+    console.print(
+        "Warnings breakdown: "
+        f"Duplicates: {aggregated_results['aggregate_warning_counts']['duplicates']} · "
+        f"Extra variables: {aggregated_results['aggregate_warning_counts']['extra_variables']} · "
+        f"Invalid lines: {aggregated_results['aggregate_warning_counts']['invalid_lines']}",
+    )
+    if aggregated_results["aggregate_issue_variables"]:
+        sorted_variables = casefold_sorted(aggregated_results["aggregate_issue_variables"])
+        display_count = min(len(sorted_variables), top_limit) if top_limit is not None else len(sorted_variables)
+        console.print("Impacted variables: " + ", ".join(sorted_variables[:display_count]))
+    else:
+        console.print("Impacted variables: ")
+    if aggregated_results["aggregated_most_common_codes"]:
+        formatted_codes = ", ".join(
+            f"{code}({count})" for code, count in aggregated_results["aggregated_most_common_codes"]
+        )
+        console.print(f"Top issue codes: {formatted_codes}")
+    if aggregated_results["aggregated_top_variables"]:
+        formatted_variables = ", ".join(
+            f"{variable}({count})"
+            for variable, count in aggregated_results["aggregated_top_variables"]
+        )
+        console.print(f"Top impacted variables: {formatted_variables}")
+    else:
+        console.print("Top impacted variables: ")
+    if resolved_profile_records:
+        console.print("Resolved profile paths:")
+        for name, env_file_raw, resolved_path, exists in resolved_profile_records:
+            status = "" if exists else " (missing)"
+            console.print(f"  • {name}: {env_file_raw} -> {resolved_path}{status}")
+
+
 @app.command()
 def doctor(
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
@@ -743,20 +857,8 @@ def doctor(
     fmt = _coerce_output_format(output_format)
     use_json = fmt is OutputFormat.JSON
     results: list[dict[str, Any]] = []
-    total_errors = 0
-    total_warnings = 0
-    total_info = 0
     missing_profiles = 0
     checked_profiles = 0
-    aggregate_warning_counts = {
-        "duplicates": 0,
-        "extra_variables": 0,
-        "invalid_lines": 0,
-    }
-    aggregate_issue_variables: set[str] = set()
-    aggregated_codes: Counter[str] = Counter()
-    aggregated_variables: set[str] = set()
-    aggregated_variable_counts: Counter[str] = Counter()
     top_limit = normalized_limit(summary_top) or 0
     resolved_profile_records: list[tuple[str, str, Path, bool]] = []
     for entry in selected_profiles:
@@ -790,20 +892,6 @@ def doctor(
                 cache.set_report(env_path, spec_path, report)
 
         checked_profiles += 1
-        severity_totals = report.severity_totals()
-        total_errors += severity_totals[IssueSeverity.ERROR.value]
-        total_warnings += severity_totals[IssueSeverity.WARNING.value]
-        total_info += severity_totals[IssueSeverity.INFO.value]
-        warnings_summary = report.warning_summary()
-        aggregate_warning_counts["duplicates"] += len(warnings_summary["duplicates"])
-        aggregate_warning_counts["extra_variables"] += len(warnings_summary["extra_variables"])
-        aggregate_warning_counts["invalid_lines"] += len(warnings_summary["invalid_lines"])
-        full_summary = report.summary()
-        aggregate_issue_variables.update(full_summary.get("variables", []))
-        aggregated_codes.update(full_summary.get("codes", {}))
-        aggregated_variables.update(full_summary.get("variables", ()))
-        for variable, count in full_summary.get("top_variables", []):
-            aggregated_variable_counts[variable] += count
         if use_json:
             summary = report.summary(top_limit=top_limit)
             report_payload = report.to_dict(top_limit=top_limit)
@@ -813,9 +901,9 @@ def doctor(
                     "env_file": env_file_raw,
                     "resolved_env_file": str(env_path),
                     "path": str(env_path),
-                    "report": report_payload,
+                    "report": report,
                     "summary": summary,
-                    "warnings": warnings_summary,
+                    "warnings": report.warning_summary(),
                 },
             )
         else:
@@ -823,70 +911,32 @@ def doctor(
             render_validation_report(report, source=str(env_path), top_limit=top_limit)
         if report.has_errors or (fail_on_warnings and report.has_warnings):
             exit_code = 1
-    aggregated_most_common_codes = sorted_counter(aggregated_codes)
-    aggregated_variables_list = casefold_sorted(aggregated_variables)
-    aggregated_top_variables = sorted_counter(aggregated_variable_counts)
-    if top_limit == 0:
-        aggregated_most_common_codes = []
-        aggregated_top_variables = []
-    else:
-        aggregated_most_common_codes = aggregated_most_common_codes[:top_limit]
-        aggregated_top_variables = aggregated_top_variables[:top_limit]
+
+    aggregated_results = _aggregate_doctor_results(results, top_limit)
+
     if use_json:
+        for result in results:
+            if "report" in result:
+                result["report"] = result["report"].to_dict(top_limit=top_limit)
         _emit_doctor_json(
             results,
             allow_extra=allow_extra,
             fail_on_warnings=fail_on_warnings,
             top_limit=top_limit,
-            aggregated_codes=aggregated_most_common_codes,
-            aggregated_top_variables=aggregated_top_variables,
-            aggregated_variables=aggregated_variables_list,
+            aggregated_codes=aggregated_results["aggregated_most_common_codes"],
+            aggregated_top_variables=aggregated_results["aggregated_top_variables"],
+            aggregated_variables=aggregated_results["aggregated_variables_list"],
             profile_base_dir=str(profile_base_dir),
         )
     else:
-        console.rule("Doctor Summary")
-        console.print(
-            f"Profiles checked: {checked_profiles}/{len(selected_profiles)}",
+        _render_doctor_text_summary(
+            checked_profiles,
+            len(selected_profiles),
+            missing_profiles,
+            aggregated_results,
+            top_limit,
+            resolved_profile_records,
         )
-        console.print(
-            " · ".join(
-                [
-                    f"Missing profiles: {missing_profiles}",
-                    f"Total errors: {total_errors}",
-                    f"Total warnings: {total_warnings}",
-                    f"Total info: {total_info}",
-                ],
-            ),
-        )
-        console.print(
-            "Warnings breakdown: "
-            f"Duplicates: {aggregate_warning_counts['duplicates']} · "
-            f"Extra variables: {aggregate_warning_counts['extra_variables']} · "
-            f"Invalid lines: {aggregate_warning_counts['invalid_lines']}",
-        )
-        if aggregate_issue_variables and top_limit != 0:
-            sorted_variables = casefold_sorted(aggregate_issue_variables)
-            display_count = min(len(sorted_variables), top_limit)
-            console.print(
-                "Impacted variables: " + ", ".join(sorted_variables[:display_count]),
-            )
-        if aggregated_most_common_codes:
-            formatted_codes = ", ".join(
-                f"{code}({count})" for code, count in aggregated_most_common_codes
-            )
-            console.print(f"Top issue codes: {formatted_codes}")
-        if aggregated_top_variables and top_limit != 0:
-            formatted_variables = ", ".join(
-                f"{variable}({count})" for variable, count in aggregated_top_variables
-            )
-            console.print(f"Top impacted variables: {formatted_variables}")
-        if resolved_profile_records:
-            console.print("Resolved profile paths:")
-            for name, env_file_raw, resolved_path, exists in resolved_profile_records:
-                status = "" if exists else " (missing)"
-                console.print(
-                    f"  • {name}: {env_file_raw} -> {resolved_path}{status}",
-                )
     raise typer.Exit(code=exit_code)
 
 
