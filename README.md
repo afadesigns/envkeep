@@ -251,6 +251,25 @@ secret = true
 source = "vault:kv/data/api-keys" # Fetched via the 'vault' backend
 ```
 
+### Google Cloud Secret Manager
+
+To use the Google Cloud Secret Manager backend, first install the necessary dependencies:
+
+```bash
+pip install envkeep[gcp]
+```
+
+The backend authenticates using the standard Google Cloud authentication methods (e.g., `gcloud auth application-default login`).
+
+In your `envkeep.toml`, add a `source` attribute with the format `gcp-sm:<resource-id>`, where `<resource-id>` is the full resource name of the secret version.
+
+```toml
+[[variables]]
+name = "GOOGLE_API_KEY"
+secret = true
+source = "gcp-sm:projects/my-project/secrets/my-api-key/versions/latest" # Fetched via the 'gcp-sm' backend
+```
+
 When you run `envkeep check`, the tool will automatically discover and invoke the plugin. Remotely fetched values take precedence over values in the local `.env` file.
 
 See the [plugin development guide](docs/plugins.md) for details on creating your own backends.
