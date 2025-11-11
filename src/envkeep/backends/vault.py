@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from ..plugins import Backend
 
 if TYPE_CHECKING:
-    import hvac
+    from hvac import Client
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,9 @@ class VaultBackend(Backend):
     """Fetch secrets from HashiCorp Vault."""
 
     def __init__(self) -> None:
-        self._client = None
+        self._client: Client | None = None
 
-    def _get_client(self) -> hvac.Client:
+    def _get_client(self) -> Client:
         if self._client is None:
             try:
                 import hvac

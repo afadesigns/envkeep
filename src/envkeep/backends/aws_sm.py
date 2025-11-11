@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 from ..plugins import Backend
 
 if TYPE_CHECKING:
-    import boto3
+    from mypy_boto3_secretsmanager.client import SecretsManagerClient
+
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +16,9 @@ class AwsSecretsManagerBackend(Backend):
     """Fetch secrets from AWS Secrets Manager."""
 
     def __init__(self) -> None:
-        self._client = None
+        self._client: SecretsManagerClient | None = None
 
-    def _get_client(self) -> boto3.client:
+    def _get_client(self) -> SecretsManagerClient:
         if self._client is None:
             try:
                 import boto3

@@ -30,10 +30,7 @@ from .utils import (
     sorted_counter,
 )
 
-try:
-    from importlib import metadata
-except ImportError:
-    import importlib_metadata as metadata
+from importlib import metadata
 
 __version__ = metadata.version("envkeep")
 
@@ -113,6 +110,7 @@ def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
 class OutputFormat(str, Enum):
     TEXT = "text"
     JSON = "json"
+    YAML = "yaml"
 
 
 def _parse_output_format(value: OutputFormat | str) -> OutputFormat:
@@ -508,7 +506,7 @@ def check(
 
     cache = Cache() if not no_cache else None
 
-    report = cache.get_report(env_file, spec_path) if cache else None
+    report = cache.get_report(env_file, spec_path) if cache and spec_path else None
     if report is None:
         # Fetch remote values from plugins
         remote_values = _fetch_remote_values(env_spec)
@@ -585,7 +583,6 @@ def diff(
         output_format=fmt,
         summary_top=summary_top,
     )
-    raise typer.Exit(code=exit_code)
 
 
 @app.command()
@@ -793,7 +790,10 @@ def _render_doctor_text_summary(
     )
     if aggregated_results["aggregate_issue_variables"]:
         sorted_variables = casefold_sorted(aggregated_results["aggregate_issue_variables"])
-        display_count = min(len(sorted_variables), top_limit) if top_limit is not None else len(sorted_variables)
+        if top_limit is not None:
+            display_count = min(len(sorted_variables), top_limit)
+        else:
+            display_count = len(sorted_variables)
         console.print("Impacted variables: " + ", ".join(sorted_variables[:display_count]))
     else:
         console.print("Impacted variables: ")
@@ -922,7 +922,7 @@ def doctor(
         checked_profiles += 1
         if use_json:
             summary = report.summary(top_limit=top_limit)
-            report_payload = report.to_dict(top_limit=top_limit)
+
             results.append(
                 {
                     "profile": name,

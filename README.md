@@ -197,6 +197,8 @@ envkeep doctor --no-cache
 
 The `diff` command compares two environment files, using the spec to normalize values and identify meaningful differences. This is useful for comparing local changes against a deployed environment.
 
+You can also get the output in JSON format by using the `--format json` flag. This is useful for programmatic analysis of the diff.
+
 ## GitHub Action
 
 You can use `envkeep` in your GitHub Actions workflows to automatically validate environment profiles on pull requests. Create a file named `.github/workflows/envkeep.yml` with the following content:
@@ -221,9 +223,97 @@ jobs:
         run: pip install envkeep
       - name: Run envkeep doctor
         run: envkeep doctor --fail-on-warnings
-```
+**JSON Output:**
 
-This workflow will run on every pull request to the `main` branch and will fail if any of the profiles have errors or warnings.
+```json
+{
+  "report": {
+    "is_clean": false,
+    "by_kind": {
+      "missing": 0,
+      "extra": 0,
+      "changed": 4
+    },
+    "variables": [
+      "ALLOWED_HOSTS",
+      "API_TOKEN",
+      "DATABASE_URL",
+      "DEBUG"
+    ],
+    "top_variables": [
+      [
+        "ALLOWED_HOSTS",
+        1
+      ],
+      [
+        "API_TOKEN",
+        1
+      ],
+      [
+        "DATABASE_URL",
+        1
+      ]
+    ],
+    "entries": [
+      {
+        "variable": "ALLOWED_HOSTS",
+        "kind": "changed",
+        "left": "localhost,api.local",
+        "right": "app.example.com"
+      },
+      {
+        "variable": "API_TOKEN",
+        "kind": "changed",
+        "left": "***",
+        "right": "***"
+      },
+      {
+        "variable": "DATABASE_URL",
+        "kind": "changed",
+        "left": "***",
+        "right": "***"
+      },
+      {
+        "variable": "DEBUG",
+        "kind": "changed",
+        "left": "true",
+        "right": "false"
+      }
+    ]
+  },
+  "summary": {
+    "is_clean": false,
+    "by_kind": {
+      "missing": 0,
+      "extra": 0,
+      "changed": 4
+    },
+    "non_empty_kinds": [
+      "changed"
+    ],
+    "variables": [
+      "ALLOWED_HOSTS",
+      "API_TOKEN",
+      "DATABASE_URL",
+      "DEBUG"
+    ],
+    "top_variables": [
+      [
+        "ALLOWED_HOSTS",
+        1
+      ],
+      [
+        "API_TOKEN",
+        1
+      ],
+      [
+        "DATABASE_URL",
+        1
+      ]
+    ]
+  }
+}
+```
 
 ## Architecture
 - `envkeep.toml` defines variables, metadata, and environment profiles.

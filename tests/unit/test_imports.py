@@ -21,7 +21,7 @@ def test_spec_imports_merge_variables_and_profiles(tmp_path: Path) -> None:
         [[profiles]]
         name = "imported_profile"
         env_file = ".env.imported"
-        """
+        """,
     )
     imported_spec_file.write_text(imported_spec_text, encoding="utf-8")
 
@@ -39,7 +39,7 @@ def test_spec_imports_merge_variables_and_profiles(tmp_path: Path) -> None:
         [[profiles]]
         name = "main_profile"
         env_file = ".env.main"
-        """
+        """,
     )
     main_spec_file.write_text(main_spec_text, encoding="utf-8")
 
@@ -73,7 +73,7 @@ def test_spec_imports_main_overrides_imported(tmp_path: Path) -> None:
         [[profiles]]
         name = "profile"
         env_file = ".env.imported"
-        """
+        """,
     )
     imported_spec_file.write_text(imported_spec_text, encoding="utf-8")
 
@@ -92,7 +92,7 @@ def test_spec_imports_main_overrides_imported(tmp_path: Path) -> None:
         [[profiles]]
         name = "profile"
         env_file = ".env.main"
-        """
+        """,
     )
     main_spec_file.write_text(main_spec_text, encoding="utf-8")
 

@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING
 from ..plugins import Backend
 
 if TYPE_CHECKING:
-    from google.cloud import secretmanager
+    from google.cloud.secretmanager_v1.services.secret_manager_service.client import (
+        SecretManagerServiceClient,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -13,17 +15,18 @@ class GcpSecretManagerBackend(Backend):
     """Fetch secrets from Google Cloud Secret Manager."""
 
     def __init__(self) -> None:
-        self._client = None
+        self._client: SecretManagerServiceClient | None = None
 
-    def _get_client(self) -> secretmanager.SecretManagerServiceClient:
+    def _get_client(self) -> SecretManagerServiceClient:
         if self._client is None:
             try:
                 from google.cloud import secretmanager
+
+                self._client = secretmanager.SecretManagerServiceClient()
             except ImportError as exc:
                 raise ImportError(
                     "google-cloud-secret-manager is not installed. Run `pip install envkeep[gcp]`.",
                 ) from exc
-            self._client = secretmanager.SecretManagerServiceClient()
         return self._client
 
     def fetch(self, sources: dict[str, str]) -> dict[str, str]:
