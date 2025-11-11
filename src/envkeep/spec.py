@@ -240,8 +240,8 @@ class EnvSpec:
     def variable_map(self) -> Mapping[str, VariableSpec]:
         return self._variable_cache
 
-    def validate(self, snapshot: EnvSnapshot, *, allow_extra: bool = False) -> ValidationReport:
-        report = ValidationReport()
+    def _validate_variables(self, snapshot: EnvSnapshot, report: ValidationReport) -> None:
+        """Validate variables against the spec."""
         variables = self.variable_map()
         for name, spec in variables.items():
             raw = snapshot.get(name)
@@ -269,8 +269,16 @@ class EnvSpec:
                         code="invalid",
                     ),
                 )
+
+    def _check_for_extra_variables(
+        self,
+        snapshot: EnvSnapshot,
+        report: ValidationReport,
+        allow_extra: bool,
+    ) -> None:
+        """Check for variables not declared in the spec."""
         if not allow_extra:
-            extras = [key for key in snapshot.keys() if key not in variables]
+            extras = [key for key in snapshot.keys() if key not in self.variable_map()]
             for key in casefold_sorted(extras):
                 report.add(
                     ValidationIssue(
@@ -281,6 +289,9 @@ class EnvSpec:
                         hint="Add it to envkeep.toml or remove it from the environment.",
                     ),
                 )
+
+    def _check_for_duplicate_keys(self, snapshot: EnvSnapshot, report: ValidationReport) -> None:
+        """Check for duplicate keys in the snapshot."""
         for key in snapshot.duplicate_keys():
             report.add(
                 ValidationIssue(
@@ -291,6 +302,9 @@ class EnvSpec:
                     hint="Remove duplicate assignments to keep configuration deterministic.",
                 ),
             )
+
+    def _check_for_invalid_lines(self, snapshot: EnvSnapshot, report: ValidationReport) -> None:
+        """Check for invalid lines in the snapshot."""
         for line_no, raw in snapshot.malformed_lines():
             report.add(
                 ValidationIssue(
@@ -301,6 +315,13 @@ class EnvSpec:
                     hint=f"Review the syntax: {raw}",
                 ),
             )
+
+    def validate(self, snapshot: EnvSnapshot, *, allow_extra: bool = False) -> ValidationReport:
+        report = ValidationReport()
+        self._validate_variables(snapshot, report)
+        self._check_for_extra_variables(snapshot, report, allow_extra)
+        self._check_for_duplicate_keys(snapshot, report)
+        self._check_for_invalid_lines(snapshot, report)
         return report
 
     def diff(self, left: EnvSnapshot, right: EnvSnapshot) -> DiffReport:

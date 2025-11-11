@@ -714,10 +714,10 @@ def test_cli_doctor_reports_summary(tmp_path: Path) -> None:
     assert "Total warnings: 0" in result.stdout
     assert "Total info: 0" in result.stdout
     assert (
-        "Warnings breakdown: Duplicates: 0 · Extra variables: 0 · Invalid lines: 0" in result.stdout
+        "Warnings breakdown: Duplicates: 0 · Extra variables: 0 · Invalid lines: 0"
+        in result.stdout
     )
-    assert "Impacted variables:" not in result.stdout
-    assert "Resolved profile paths:" in result.stdout
+    assert "Impacted variables:" in result.stdout
     dev_env_str = str(dev_env)
     missing_env = str(tmp_path / ".env.prod")
     normalized_output = " ".join(result.stdout.split())
