@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from ._compat import tomllib
@@ -50,38 +50,50 @@ class VariableType(str, Enum):
     JSON = "json"
     LIST = "list"
 
+    def _normalize_string(self, raw: str) -> str:
+        return raw
+
+    def _normalize_int(self, raw: str) -> str:
+        return str(int(raw, 10))
+
+    def _normalize_float(self, raw: str) -> str:
+        return format(float(raw), ".6g")
+
+    def _normalize_bool(self, raw: str) -> str:
+        lowered = raw.lower()
+        if lowered in _BOOL_TRUE:
+            return "true"
+        if lowered in _BOOL_FALSE:
+            return "false"
+        raise ValueError("invalid boolean value")
+
+    def _normalize_url(self, raw: str) -> str:
+        parsed = urlparse(raw)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError("invalid URL")
+        return parsed.geturl()
+
+    def _normalize_path(self, raw: str) -> str:
+        return str(Path(raw).as_posix())
+
+    def _normalize_json(self, raw: str) -> str:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:  # pragma: no cover - explicit message
+            raise ValueError(f"invalid JSON: {exc.msg}") from exc
+        return json.dumps(data, sort_keys=True)
+
+    def _normalize_list(self, raw: str) -> str:
+        items = [item.strip() for item in raw.split(",") if item.strip()]
+        return ",".join(items)
+
     def normalize(self, raw: str) -> str:
         raw = raw.strip()
-        if self is VariableType.STRING:
-            return raw
-        if self is VariableType.INT:
-            return str(int(raw, 10))
-        if self is VariableType.FLOAT:
-            return format(float(raw), ".6g")
-        if self is VariableType.BOOL:
-            lowered = raw.lower()
-            if lowered in _BOOL_TRUE:
-                return "true"
-            if lowered in _BOOL_FALSE:
-                return "false"
-            raise ValueError("invalid boolean value")
-        if self is VariableType.URL:
-            parsed = urlparse(raw)
-            if not parsed.scheme or not parsed.netloc:
-                raise ValueError("invalid URL")
-            return parsed.geturl()
-        if self is VariableType.PATH:
-            return str(Path(raw).as_posix())
-        if self is VariableType.JSON:
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError as exc:  # pragma: no cover - explicit message
-                raise ValueError(f"invalid JSON: {exc.msg}") from exc
-            return json.dumps(data, sort_keys=True)
-        if self is VariableType.LIST:
-            items = [item.strip() for item in raw.split(",") if item.strip()]
-            return ",".join(items)
-        raise ValueError(f"unsupported type: {self.value}")
+        try:
+            normalizer = cast(Callable[[str], str], getattr(self, f"_normalize_{self.value}"))
+            return normalizer(raw)
+        except AttributeError:
+            raise ValueError(f"unsupported type: {self.value}") from None
 
     def default_example(self) -> str:
         if self is VariableType.STRING:
