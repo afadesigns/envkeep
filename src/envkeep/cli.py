@@ -43,7 +43,7 @@ def version_callback(value: bool) -> None:
 
 
 try:  # pragma: no cover - Click 8.0 compatibility
-    from click._utils import UNSET as _CLICK_UNSET
+    from click._utils import UNSET as _CLICK_UNSET  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
     _CLICK_UNSET = None
 
@@ -63,7 +63,7 @@ DEFAULT_OUTPUT_FORMAT = "text"
 DEFAULT_PROFILE = "all"
 
 
-@app.callback()  # type: ignore[misc]
+@app.callback()
 def main(
     version: bool = typer.Option(
         None,
@@ -465,7 +465,7 @@ def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
     return base_spec
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def check(
     env_file: Path = ENV_FILE_ARGUMENT,
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
@@ -537,7 +537,7 @@ def check(
     raise typer.Exit(code=exit_code)
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def diff(
     first: Path = DIFF_FIRST_ARGUMENT,
     second: Path = DIFF_SECOND_ARGUMENT,
@@ -584,7 +584,7 @@ def diff(
     raise typer.Exit(code=exit_code)
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def generate(
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
     output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
@@ -607,7 +607,7 @@ def generate(
         typer.echo(content)
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def inspect(
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
     output_format: str = FORMAT_OPTION_DEFAULT,
@@ -819,7 +819,7 @@ def _render_doctor_text_summary(
             console.print(f"  • {name}: {env_file_raw} -> {resolved_path}{status}")
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def doctor(
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
     profile: str = PROFILE_OPTION_DEFAULT,
@@ -867,110 +867,110 @@ def doctor(
     if not profiles:
         typer.echo("No profiles declared in spec.")
         raise typer.Exit(code=0)
-
-    cache = Cache() if not no_cache else None
-
-    def _selected_entry(item: ProfileSpec) -> dict[str, Any]:
-        resolved = _resolve_profile_path(item.env_file, base_dir=profile_base_dir)
-        return {
-            "name": item.name,
-            "env_file": item.env_file,
-            "path": resolved,
-        }
-
-    if profile == "all":
-        selected_profiles = [_selected_entry(item) for item in profiles]
     else:
-        mapping = env_spec.profiles_by_name()
-        if profile not in mapping:
-            raise typer.BadParameter(f"profile '{profile}' not found")
-        selected_profiles = [_selected_entry(mapping[profile])]
+        cache = Cache() if not no_cache else None
 
-    exit_code = 0
-    fmt = _coerce_output_format(output_format)
-    use_json = fmt is OutputFormat.JSON
-    results: list[dict[str, Any]] = []
-    missing_profiles = 0
-    checked_profiles = 0
-    top_limit = normalized_limit(summary_top) or 0
-    resolved_profile_records: list[tuple[str, str, Path, bool]] = []
-    for entry in selected_profiles:
-        name = entry["name"]
-        env_file_raw = entry["env_file"]
-        env_path = entry["path"]
-        exists = env_path.exists()
-        resolved_profile_records.append((name, env_file_raw, env_path, exists))
-        if not exists:
-            missing_profiles += 1
+        def _selected_entry(item: ProfileSpec) -> dict[str, Any]:
+            resolved = _resolve_profile_path(item.env_file, base_dir=profile_base_dir)
+            return {
+                "name": item.name,
+                "env_file": item.env_file,
+                "path": resolved,
+            }
+
+        if profile == "all":
+            selected_profiles = [_selected_entry(item) for item in profiles]
+        else:
+            mapping = env_spec.profiles_by_name()
+            if profile not in mapping:
+                raise typer.BadParameter(f"profile '{profile}' not found")
+            selected_profiles = [_selected_entry(mapping[profile])]
+
+        exit_code = 0
+        fmt = _coerce_output_format(output_format)
+        use_json = fmt is OutputFormat.JSON
+        results: list[dict[str, Any]] = []
+        missing_profiles = 0
+        checked_profiles = 0
+        top_limit = normalized_limit(summary_top) or 0
+        resolved_profile_records: list[tuple[str, str, Path, bool]] = []
+        for entry in selected_profiles:
+            name = entry["name"]
+            env_file_raw = entry["env_file"]
+            env_path = entry["path"]
+            exists = env_path.exists()
+            resolved_profile_records.append((name, env_file_raw, env_path, exists))
+            if not exists:
+                missing_profiles += 1
+                if use_json:
+                    results.append(
+                        {
+                            "profile": name,
+                            "env_file": env_file_raw,
+                            "resolved_env_file": str(env_path),
+                            "path": str(env_path),
+                            "error": "missing env file",
+                        },
+                    )
+                else:
+                    typer.echo(f"Profile {name}: missing env file {env_path}")
+                exit_code = 1
+                continue
+
+            report = cache.get_report(env_path, spec_path) if cache else None
+            if report is None:
+                snapshot = EnvSnapshot.from_env_file(env_path)
+                report = env_spec.validate(snapshot, allow_extra=allow_extra)
+                if cache:
+                    cache.set_report(env_path, spec_path, report)
+
+            checked_profiles += 1
             if use_json:
+                summary = report.summary(top_limit=top_limit)
+
                 results.append(
                     {
                         "profile": name,
                         "env_file": env_file_raw,
                         "resolved_env_file": str(env_path),
                         "path": str(env_path),
-                        "error": "missing env file",
+                        "report": report,
+                        "summary": summary,
+                        "warnings": report.warning_summary(),
                     },
                 )
             else:
-                typer.echo(f"Profile {name}: missing env file {env_path}")
-            exit_code = 1
-            continue
+                console.rule(f"Profile: {name}")
+                render_validation_report(report, source=str(env_path), top_limit=top_limit)
+            if report.has_errors or (fail_on_warnings and report.has_warnings):
+                exit_code = 1
 
-        report = cache.get_report(env_path, spec_path) if cache else None
-        if report is None:
-            snapshot = EnvSnapshot.from_env_file(env_path)
-            report = env_spec.validate(snapshot, allow_extra=allow_extra)
-            if cache:
-                cache.set_report(env_path, spec_path, report)
+        aggregated_results = _aggregate_doctor_results(results, top_limit)
 
-        checked_profiles += 1
         if use_json:
-            summary = report.summary(top_limit=top_limit)
-
-            results.append(
-                {
-                    "profile": name,
-                    "env_file": env_file_raw,
-                    "resolved_env_file": str(env_path),
-                    "path": str(env_path),
-                    "report": report,
-                    "summary": summary,
-                    "warnings": report.warning_summary(),
-                },
+            for result in results:
+                if "report" in result:
+                    result["report"] = result["report"].to_dict(top_limit=top_limit)
+            _emit_doctor_json(
+                results,
+                allow_extra=allow_extra,
+                fail_on_warnings=fail_on_warnings,
+                top_limit=top_limit,
+                aggregated_codes=aggregated_results["aggregated_most_common_codes"],
+                aggregated_top_variables=aggregated_results["aggregated_top_variables"],
+                aggregated_variables=aggregated_results["aggregated_variables_list"],
+                profile_base_dir=str(profile_base_dir),
             )
         else:
-            console.rule(f"Profile: {name}")
-            render_validation_report(report, source=str(env_path), top_limit=top_limit)
-        if report.has_errors or (fail_on_warnings and report.has_warnings):
-            exit_code = 1
-
-    aggregated_results = _aggregate_doctor_results(results, top_limit)
-
-    if use_json:
-        for result in results:
-            if "report" in result:
-                result["report"] = result["report"].to_dict(top_limit=top_limit)
-        _emit_doctor_json(
-            results,
-            allow_extra=allow_extra,
-            fail_on_warnings=fail_on_warnings,
-            top_limit=top_limit,
-            aggregated_codes=aggregated_results["aggregated_most_common_codes"],
-            aggregated_top_variables=aggregated_results["aggregated_top_variables"],
-            aggregated_variables=aggregated_results["aggregated_variables_list"],
-            profile_base_dir=str(profile_base_dir),
-        )
-    else:
-        _render_doctor_text_summary(
-            checked_profiles,
-            len(selected_profiles),
-            missing_profiles,
-            aggregated_results,
-            top_limit,
-            resolved_profile_records,
-        )
-    raise typer.Exit(code=exit_code)  # type: ignore[unreachable]
+            _render_doctor_text_summary(
+                checked_profiles,
+                len(selected_profiles),
+                missing_profiles,
+                aggregated_results,
+                top_limit,
+                resolved_profile_records,
+            )
+        raise typer.Exit(code=exit_code)
 
 
 def render_validation_report(
