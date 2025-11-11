@@ -226,6 +226,7 @@ class EnvSpec:
     variables: list[VariableSpec]
     profiles: list[ProfileSpec] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    imports: list[str] = field(default_factory=list)
     _variable_cache: Mapping[str, VariableSpec] = field(init=False, repr=False)
     _profile_cache: Mapping[str, ProfileSpec] = field(init=False, repr=False)
     _variable_names: tuple[str, ...] = field(init=False, repr=False)
@@ -246,11 +247,19 @@ class EnvSpec:
         metadata = data.get("metadata", {})
         variables_data = data.get("variables", [])
         profiles_data = data.get("profiles", [])
+        imports_data = data.get("imports", [])
         variables = [VariableSpec.from_dict(item) for item in variables_data]
         _assert_unique([var.name for var in variables], entity="variable")
         profiles = [ProfileSpec.from_dict(item) for item in profiles_data]
         _assert_unique([profile.name for profile in profiles], entity="profile")
-        return cls(version=version, variables=variables, profiles=profiles, metadata=dict(metadata))
+        imports = [str(item) for item in imports_data]
+        return cls(
+            version=version,
+            variables=variables,
+            profiles=profiles,
+            metadata=dict(metadata),
+            imports=imports,
+        )
 
     def variable_map(self) -> Mapping[str, VariableSpec]:
         return self._variable_cache

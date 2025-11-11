@@ -408,15 +408,8 @@ def _emit_doctor_json(
     _emit_json(payload)
 
 
-def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
-    if path is None:
-        config = load_config()
-        path = config.spec_path
-
-    if path is None:
-        path = find_spec_path()
-        if path is None:
-            raise typer.BadParameter("spec file not found (envkeep.toml)")
+def _load_spec_from_path(path: Path, stdin_data: str | None) -> EnvSpec:
+    """Load a spec from a path, handling stdin."""
     path_str = str(path)
     try:
         if path_str == "-":
@@ -426,9 +419,9 @@ def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
             data = tomllib.loads(content)
             return EnvSpec.from_dict(data)
         return EnvSpec.from_file(path)
-    except FileNotFoundError as exc:  # pragma: no cover - Typer handles message but keep guard
+    except FileNotFoundError as exc:
         raise typer.BadParameter(f"spec file not found: {path}") from exc
-    except tomllib.TOMLDecodeError as exc:  # pragma: no cover - exercised via CLI tests
+    except tomllib.TOMLDecodeError as exc:
         detail = getattr(exc, "msg", str(exc))
         line = getattr(exc, "lineno", None)
         col = getattr(exc, "colno", None)
@@ -437,8 +430,43 @@ def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
         message = f"failed to parse spec: {detail}"
         typer.echo(message)
         raise typer.BadParameter(message) from exc
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:
         raise typer.BadParameter(f"failed to load spec: {exc}") from exc
+
+
+def _merge_specs(base_spec: EnvSpec, imported_spec: EnvSpec) -> None:
+    """Merge an imported spec into a base spec."""
+    existing_vars = {var.name for var in base_spec.variables}
+    base_spec.variables.extend(
+        var for var in imported_spec.variables if var.name not in existing_vars
+    )
+    existing_profiles = {prof.name for prof in base_spec.profiles}
+    base_spec.profiles.extend(
+        prof for prof in imported_spec.profiles if prof.name not in existing_profiles
+    )
+
+
+def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
+    if path is None:
+        config = load_config()
+        path = config.spec_path
+
+    if path is None:
+        path = find_spec_path()
+        if path is None:
+            raise typer.BadParameter("spec file not found (envkeep.toml)")
+
+    base_spec = _load_spec_from_path(path, stdin_data)
+    if not base_spec.imports:
+        return base_spec
+
+    base_dir = path.parent
+    for import_path_str in base_spec.imports:
+        import_path = base_dir / import_path_str
+        imported_spec = load_spec(import_path)
+        _merge_specs(base_spec, imported_spec)
+
+    return base_spec
 
 
 @app.command()
