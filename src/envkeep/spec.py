@@ -116,6 +116,10 @@ class VariableSpec:
     example: str | None = None
     allow_empty: bool = False
     source: str | None = None
+    min_length: int | None = None
+    max_length: int | None = None
+    min_value: int | float | None = None
+    max_value: int | float | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VariableSpec:
@@ -142,6 +146,10 @@ class VariableSpec:
             example=example,
             allow_empty=bool(data.get("allow_empty", False)),
             source=data.get("source"),
+            min_length=data.get("min_length"),
+            max_length=data.get("max_length"),
+            min_value=data.get("min_value"),
+            max_value=data.get("max_value"),
         )
         if default is not None:
             instance.validate(default)
@@ -155,6 +163,18 @@ class VariableSpec:
             raise ValueError(f"value must be one of {self.choices}")
         if self.pattern and not self.pattern.fullmatch(normalized):
             raise ValueError("value does not match pattern")
+        if self.min_length is not None and len(normalized) < self.min_length:
+            raise ValueError(f"length must be at least {self.min_length}")
+        if self.max_length is not None and len(normalized) > self.max_length:
+            raise ValueError(f"length must be at most {self.max_length}")
+        if self.min_value is not None:
+            if self.var_type in (VariableType.INT, VariableType.FLOAT):
+                if float(normalized) < self.min_value:
+                    raise ValueError(f"value must be at least {self.min_value}")
+        if self.max_value is not None:
+            if self.var_type in (VariableType.INT, VariableType.FLOAT):
+                if float(normalized) > self.max_value:
+                    raise ValueError(f"value must be at most {self.max_value}")
         return normalized
 
     def normalize(self, value: str) -> str:

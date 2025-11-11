@@ -78,6 +78,36 @@ profile_base = "config/profiles"
 
 Command-line options will always override settings in `pyproject.toml`.
 
+## Validation Rules
+
+In addition to types, `envkeep` supports several other validation rules:
+
+-   `choices`: A list of allowed values for a variable.
+-   `pattern`: A regular expression that the variable's value must match.
+-   `min_length`: The minimum allowed length for a string variable.
+-   `max_length`: The maximum allowed length for a string variable.
+-   `min_value`: The minimum allowed value for an `int` or `float` variable.
+-   `max_value`: The maximum allowed value for an `int` or `float` variable.
+
+**Example `envkeep.toml`:**
+
+```toml
+[[variables]]
+name = "LOG_LEVEL"
+choices = ["debug", "info", "warning", "error"]
+
+[[variables]]
+name = "API_KEY"
+min_length = 32
+max_length = 32
+
+[[variables]]
+name = "PORT"
+type = "int"
+min_value = 1024
+max_value = 65535
+```
+
 ## Shell Completion
 
 `envkeep` supports shell completion for Bash, Zsh, and Fish. To install, run the following command for your shell:
