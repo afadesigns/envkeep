@@ -1,0 +1,22 @@
+name: 'EnvKeep CLI'
+description: 'Run EnvKeep commands to manage and validate environment variables.'
+author: 'afadesigns'
+inputs:
+  args:
+    description: 'Arguments to pass to the envkeep CLI (e.g., "check --strict").'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x' # Use a flexible Python version
+    - name: Install EnvKeep
+      run: |
+        pip install envkeep
+      shell: bash
+    - name: Run EnvKeep Command
+      run: |
+        envkeep ${{ inputs.args }}
+      shell: bash
