@@ -65,3 +65,4 @@ benchmarks/.benchmarks/
 !examples/basic/.env.prod
 \n# Codex\n.codex\ncodex
 >>>>>>> Stashed changes
+.codex/
