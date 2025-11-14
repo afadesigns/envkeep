@@ -1066,6 +1066,24 @@ def test_cli_generate_docs_writes_to_file(tmp_path: Path) -> None:
     assert "| DATABASE_URL |" in content
 
 
+def test_cli_generate_schema() -> None:
+    result = runner.invoke(app, ["generate-schema"])
+    assert result.exit_code == 0
+    schema = json.loads(result.stdout)
+    assert schema["$schema"] == "http://json-schema.org/draft-07/schema#"
+    assert "variables" in schema["properties"]
+    assert "profiles" in schema["properties"]
+
+
+def test_cli_generate_schema_writes_to_file(tmp_path: Path) -> None:
+    output = tmp_path / "schema.json"
+    result = runner.invoke(app, ["generate-schema", "--output", str(output)])
+    assert result.exit_code == 0
+    assert output.exists()
+    schema = json.loads(output.read_text(encoding="utf-8"))
+    assert schema["$schema"] == "http://json-schema.org/draft-07/schema#"
+
+
 def test_cli_inspect_json_output(patch_config: MagicMock) -> None:
     spec_file = patch_config.return_value.project_root / "envkeep.toml"
     spec_file.write_text(EXAMPLE_SPEC.read_text(), encoding="utf-8")

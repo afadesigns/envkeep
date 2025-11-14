@@ -21,7 +21,7 @@ from .display import render_diff_report, render_validation_report
 from .plugins import load_backends
 from .report import DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
-from .spec import EnvSpec, ProfileSpec
+from .spec import EnvSpec, ProfileSpec, VariableType
 from .utils import (
     OptionalPath,
     casefold_sorted,
@@ -718,6 +718,65 @@ def _generate_docs_content(env_spec: EnvSpec) -> str:
             f"| {var.name} | {var.var_type.value} | {'Yes' if var.required else 'No'} | {var.description or ''} | {var.default or ''} |"
         )
     return "\n".join(lines)
+
+
+@app.command()
+def generate_schema(
+    output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
+) -> None:
+    """Generate a JSON schema for the envkeep.toml file."""
+    schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "envkeep.toml schema",
+        "type": "object",
+        "properties": {
+            "version": {"type": "integer"},
+            "metadata": {"type": "object"},
+            "variables": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "type": {"type": "string", "enum": [t.value for t in VariableType]},
+                        "required": {"type": "boolean"},
+                        "default": {"type": "string"},
+                        "description": {"type": "string"},
+                        "secret": {"type": "boolean"},
+                        "choices": {"type": "array", "items": {"type": "string"}},
+                        "pattern": {"type": "string"},
+                        "example": {"type": "string"},
+                        "allow_empty": {"type": "boolean"},
+                        "source": {"type": "string"},
+                        "min_length": {"type": "integer"},
+                        "max_length": {"type": "integer"},
+                        "min_value": {"type": "number"},
+                        "max_value": {"type": "number"},
+                    },
+                    "required": ["name"],
+                },
+            },
+            "profiles": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "env_file": {"type": "string"},
+                        "description": {"type": "string"},
+                    },
+                    "required": ["name", "env_file"],
+                },
+            },
+        },
+    }
+    content = json.dumps(schema, indent=2)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote schema to {output}")
+    else:
+        typer.echo(content)
 
 
 @app.command()
