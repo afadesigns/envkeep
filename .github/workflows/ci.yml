@@ -118,7 +118,7 @@ jobs:
         uses: github/codeql-action/analyze@v3.25.11
 
       - name: Semgrep
-        uses: semgrep/semgrep-action@main
+        uses: semgrep/semgrep-action@v1
         with:
           config: "p/python"
 
