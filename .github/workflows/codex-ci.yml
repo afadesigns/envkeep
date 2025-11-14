@@ -59,6 +59,7 @@ jobs:
           changed_json=$(python - <<'PY'
 import json
 paths=[line.strip() for line in open('changed.txt') if line.strip()]
+print(json.dumps(paths))
 PY
 )
           echo "changed_files=${changed_json}" >> "$GITHUB_OUTPUT"
@@ -909,6 +910,7 @@ PY
             const fs = require('fs');
             const summaryPath = 'codex-ci-aggregate/summary.md';
             if (!fs.existsSync(summaryPath)) {
+              console.log('Summary missing, skipping comment');
               return;
             }
             const body = fs.readFileSync(summaryPath, 'utf8');

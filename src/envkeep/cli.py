@@ -41,12 +41,12 @@ def version_callback(value: bool) -> None:
 
 
 try:  # pragma: no cover - Click 8.0 compatibility
-    from click._utils import UNSET as _CLICK_UNSET  # type: ignore[import-not-found]
+    from click._utils import UNSET as _CLICK_UNSET
 except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
-    _CLICK_UNSET = None
+    _CLICK_UNSET: Sentinel | None = None
 
 if _CLICK_UNSET is None:  # pragma: no cover - Typer >=0.12 on newer Click versions
-    warnings.filterwarnings(
+    warnings.filterwarnings(  # type: ignore[unreachable]
         "ignore",
         message="The 'is_flag' and 'flag_value' parameters are not supported by Typer",
         category=DeprecationWarning,
@@ -943,7 +943,7 @@ def doctor(
             if report.has_errors or (fail_on_warnings and report.has_warnings):
                 exit_code = 1
 
-        aggregated_results = _aggregate_doctor_results(results, top_limit)  # type: ignore[unreachable]
+        aggregated_results = _aggregate_doctor_results(results, top_limit)
 
         if use_json:
             for result in results:
