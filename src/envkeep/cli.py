@@ -41,12 +41,12 @@ def version_callback(value: bool) -> None:
 
 
 try:  # pragma: no cover - Click 8.0 compatibility
-    from click._utils import UNSET as _CLICK_UNSET
+    from click._utils import UNSET as _CLICK_UNSET  # type: ignore
 except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
-    _CLICK_UNSET: Any | None = None
+    _CLICK_UNSET = None
 
 if _CLICK_UNSET is None:  # pragma: no cover - Typer >=0.12 on newer Click versions
-    warnings.filterwarnings(  # type: ignore[unreachable]
+    warnings.filterwarnings(
         "ignore",
         message="The 'is_flag' and 'flag_value' parameters are not supported by Typer",
         category=DeprecationWarning,
@@ -468,6 +468,44 @@ def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
         _merge_specs(base_spec, imported_spec)
 
     return base_spec
+
+
+@app.command()
+def init(
+    env_file: Path = typer.Argument(..., help="Path to environment file to import."),
+    output: Path = typer.Option(
+        "envkeep.toml",
+        "--output",
+        "-o",
+        help="Path where spec file should be written.",
+    ),
+    description: str = typer.Option(
+        "My application",
+        "--description",
+        help="Description of the application.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite an existing spec file without prompting.",
+    ),
+) -> None:
+    """Create a new envkeep.toml spec from an existing .env file."""
+    if not env_file.exists():
+        _usage_error(f"input file not found: {env_file}")
+    if output.exists() and not force:
+        if not typer.confirm(f"overwrite existing file? {output}"):
+            typer.echo("Aborted.")
+            raise typer.Exit(code=1)
+    snapshot = EnvSnapshot.from_env_file(env_file)
+    spec = EnvSpec.from_snapshot(snapshot, description=description)
+    content = spec.generate_example(redact_secrets=False)
+    try:
+        output.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote spec to {output}")
+    except OSError as exc:
+        _usage_error(f"failed to write spec: {exc}")
 
 
 @app.command()
@@ -949,6 +987,9 @@ def doctor(
                 render_validation_report(report, source=str(env_path), top_limit=top_limit)
             if report.has_errors or (fail_on_warnings and report.has_warnings):
                 exit_code = 1
+        
+        if missing_profiles > 0:
+            exit_code = 1
 
         aggregated_results = _aggregate_doctor_results(results, top_limit)
 
@@ -975,7 +1016,8 @@ def doctor(
                 top_limit,
                 resolved_profile_records,
             )
-        raise typer.Exit(code=exit_code)
+
+    raise typer.Exit(code=exit_code)
 
 
 def render_validation_report(

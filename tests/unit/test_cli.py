@@ -21,6 +21,57 @@ PROD_ENV = Path("examples/basic/.env.prod")
 PROD_ENV_ABS = PROD_ENV.resolve()
 
 
+def test_cli_init_creates_spec(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("FOO=bar\nBAZ=qux\n", encoding="utf-8")
+    output = tmp_path / "envkeep.toml"
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(env_file),
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    assert output.exists()
+    content = output.read_text(encoding="utf-8")
+    assert "FOO" in content
+    assert "BAZ" in content
+
+
+def test_cli_init_confirms_overwrite(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("FOO=bar\n", encoding="utf-8")
+    output = tmp_path / "envkeep.toml"
+    output.write_text("initial", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(env_file),
+            "--output",
+            str(output),
+        ],
+        input="n\n",
+    )
+    assert "Aborted" in result.stdout
+    assert output.read_text(encoding="utf-8") == "initial"
+    force_result = runner.invoke(
+        app,
+        [
+            "init",
+            str(env_file),
+            "--output",
+            str(output),
+            "--force",
+        ],
+    )
+    assert force_result.exit_code == 0
+    assert "FOO" in output.read_text(encoding="utf-8")
+
+
 def test_cli_check_success() -> None:
     result = runner.invoke(app, ["check", str(DEV_ENV), "--spec", str(EXAMPLE_SPEC)])
     assert result.exit_code == 0

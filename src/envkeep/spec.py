@@ -276,6 +276,19 @@ class EnvSpec:
             imports=imports,
         )
 
+    @classmethod
+    def from_snapshot(cls, snapshot: EnvSnapshot, *, description: str) -> EnvSpec:
+        """Create a spec from a snapshot, inferring variable types."""
+        variables = [
+            VariableSpec(name=name, var_type=VariableType.STRING)
+            for name in sorted(snapshot.keys())
+        ]
+        metadata = {
+            "description": description,
+            "generated_from": snapshot.source,
+        }
+        return cls(version=1, variables=variables, metadata=metadata)
+
     def variable_map(self) -> Mapping[str, VariableSpec]:
         return self._variable_cache
 
