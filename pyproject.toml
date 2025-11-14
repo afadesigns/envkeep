@@ -39,6 +39,10 @@ vault = [
 gcp = [
   "google-cloud-secret-manager>=2.18",
 ]
+azure = [
+  "azure-keyvault-secrets>=4.7.0",
+  "azure-identity>=1.15.0",
+]
 dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
@@ -72,6 +76,7 @@ json = "tests.plugins.json_backend:JsonBackend"
 aws-sm = "envkeep.backends.aws_sm:AwsSecretsManagerBackend"
 vault = "envkeep.backends.vault:VaultBackend"
 gcp-sm = "envkeep.backends.gcp_sm:GcpSecretManagerBackend"
+azure-kv = "envkeep.backends.azure_kv:AzureKeyVaultBackend"
 
 
 

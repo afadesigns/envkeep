@@ -54,25 +54,6 @@ wheels = [
 ]
 
 [[package]]
-name = "boto3-stubs"
-version = "1.40.70"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "botocore-stubs" },
-    { name = "types-s3transfer" },
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/cd/72/6b36303e2db0561bea257525304f471d8d7880777f6d1f90d5c44c54c0a4/boto3_stubs-1.40.70.tar.gz", hash = "sha256:b3744178114f4b21342397a066d416f8f53bf859a0636acc7adf6b30b48f76a3", size = 99392, upload-time = "2025-11-10T20:42:30.324Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6b/2c/501698e6c9895f5f8911f08cdaea9fbc5150816cf5a3c50e47e353c2b5a1/boto3_stubs-1.40.70-py3-none-any.whl", hash = "sha256:63b0752aa474cf28f2bfad1d50fa9bc7c50939b13f79618f1e9b1ce4fd72f97b", size = 68982, upload-time = "2025-11-10T20:42:23.994Z" },
-]
-
-[package.optional-dependencies]
-secretsmanager = [
-    { name = "mypy-boto3-secretsmanager" },
-]
-
-[[package]]
 name = "botocore"
 version = "1.40.70"
 source = { registry = "https://pypi.org/simple" }
@@ -84,18 +65,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/35/c1/8c4c199ae1663feee579a15861e34f10b29da11ae6ea0ad7b6a847ef3823/botocore-1.40.70.tar.gz", hash = "sha256:61b1f2cecd54d1b28a081116fa113b97bf4e17da57c62ae2c2751fe4c528af1f", size = 14444592, upload-time = "2025-11-10T20:29:04.046Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/55/d2/507fd0ee4dd574d2bdbdeac5df83f39d2cae1ffe97d4622cca6f6bab39f1/botocore-1.40.70-py3-none-any.whl", hash = "sha256:4a394ad25f5d9f1ef0bed610365744523eeb5c22de6862ab25d8c93f9f6d295c", size = 14106829, upload-time = "2025-11-10T20:29:01.101Z" },
-]
-
-[[package]]
-name = "botocore-stubs"
-version = "1.40.70"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "types-awscrt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e6/3c/7fa41847aa0262b9a2b19fb91fe112875ed8272168741d11a1b70d6d5091/botocore_stubs-1.40.70.tar.gz", hash = "sha256:37f9508be8b1ccd30102e36b9734af7eefffabbb012a240efa11bd04e1cc9cde", size = 42240, upload-time = "2025-11-10T21:23:30.071Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/71/83e600778f5c500e7e5bc5e8d23bd19c32d04ba8dbf4def4f83a5aa2d9d3/botocore_stubs-1.40.70-py3-none-any.whl", hash = "sha256:2003f0f974dac4535c6ce74945cac24fa5f0bd3393fdd817d1d7db6356c8b3a7", size = 66541, upload-time = "2025-11-10T21:23:27.921Z" },
 ]
 
 [[package]]
@@ -418,16 +387,13 @@ aws = [
     { name = "boto3" },
 ]
 dev = [
-    { name = "boto3-stubs", extra = ["secretsmanager"] },
-    { name = "google-cloud-secret-manager" },
-    { name = "hvac" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-benchmark" },
     { name = "pytest-cov" },
-    { name = "pytest-mock" },
     { name = "ruff" },
+    { name = "types-hvac" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -448,11 +414,8 @@ vault = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.34" },
-    { name = "boto3-stubs", extras = ["secretsmanager"], marker = "extra == 'dev'" },
     { name = "build", marker = "extra == 'release'", specifier = ">=1.2" },
-    { name = "google-cloud-secret-manager", marker = "extra == 'dev'", specifier = ">=2.18" },
     { name = "google-cloud-secret-manager", marker = "extra == 'gcp'", specifier = ">=2.18" },
-    { name = "hvac", marker = "extra == 'dev'", specifier = ">=2.1" },
     { name = "hvac", marker = "extra == 'vault'", specifier = ">=2.1" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
@@ -462,11 +425,11 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14" },
     { name = "rich", specifier = ">=13.7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5.5" },
     { name = "twine", marker = "extra == 'release'", specifier = ">=5.1" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "types-hvac", marker = "extra == 'dev'" },
 ]
 provides-extras = ["aws", "vault", "gcp", "dev", "docs", "release"]
 
@@ -1054,18 +1017,6 @@ wheels = [
 ]
 
 [[package]]
-name = "mypy-boto3-secretsmanager"
-version = "1.40.60"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/39/59/d2a4c5935a6feb1e9f036106aa8c972e07d117df01c984ad6ca42d0b7efc/mypy_boto3_secretsmanager-1.40.60.tar.gz", hash = "sha256:286c77f528b85a87851ec313b9daf71e6bbf79a7d2b1d0d7607dab7547436c61", size = 19844, upload-time = "2025-10-27T19:44:51.766Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/d9/27e4d1840dc1d5822bb1b2e141dee6c13f2e3423b466cf75d8d65894a26d/mypy_boto3_secretsmanager-1.40.60-py3-none-any.whl", hash = "sha256:be682734934f79cb18ed7799a09ecb091b4c53e1b7c79127f4ea14288095110c", size = 26884, upload-time = "2025-10-27T19:44:49.929Z" },
-]
-
-[[package]]
 name = "mypy-extensions"
 version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1315,18 +1266,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5e/f7/c933acc76f5208b3b00089573cf6a2bc26dc80a8aece8f52bb7d6b1855ca/pytest_cov-7.0.0.tar.gz", hash = "sha256:33c97eda2e049a0c5298e91f519302a1334c26ac65c1a483d6206fd458361af1", size = 54328, upload-time = "2025-09-09T10:57:02.113Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/49/1377b49de7d0c1ce41292161ea0f721913fa8722c19fb9c1e3aa0367eecb/pytest_cov-7.0.0-py3-none-any.whl", hash = "sha256:3b8e9558b16cc1479da72058bdecf8073661c7f57f7d3c5f22a1c23507f2d861", size = 22424, upload-time = "2025-09-09T10:57:00.695Z" },
-]
-
-[[package]]
-name = "pytest-mock"
-version = "3.15.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/68/14/eb014d26be205d38ad5ad20d9a80f7d201472e08167f0bb4361e251084a9/pytest_mock-3.15.1.tar.gz", hash = "sha256:1849a238f6f396da19762269de72cb1814ab44416fa73a8686deac10b0d87a0f", size = 34036, upload-time = "2025-09-16T16:37:27.081Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/cc/06253936f4a7fa2e0f48dfe6d851d9c56df896a9ab09ac019d70b760619c/pytest_mock-3.15.1-py3-none-any.whl", hash = "sha256:0a25e2eb88fe5168d535041d09a4529a188176ae608a6d249ee65abc0949630d", size = 10095, upload-time = "2025-09-16T16:37:25.734Z" },
 ]
 
 [[package]]
@@ -1616,21 +1555,27 @@ wheels = [
 ]
 
 [[package]]
-name = "types-awscrt"
-version = "0.28.4"
+name = "types-hvac"
+version = "2.4.0.20251101"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f7/6f/d4f2adb086e8f5cd2ae83cf8dbb192057d8b5025120e5b372468292db67f/types_awscrt-0.28.4.tar.gz", hash = "sha256:15929da84802f27019ee8e4484fb1c102e1f6d4cf22eb48688c34a5a86d02eb6", size = 17692, upload-time = "2025-11-11T02:56:53.516Z" }
+dependencies = [
+    { name = "types-requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e7/21/6ecc7b55343a7d7c937ce8edb8756bee7d3a783072bdf27807d59a863449/types_hvac-2.4.0.20251101.tar.gz", hash = "sha256:e0b38bb5ec2683e9bdc9a2a5149b1030d5298756d28d6b0f27a78c7d0f27085a", size = 24202, upload-time = "2025-11-01T03:04:09.076Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/ae/9acc4adf1d5d7bb7d09b6f9ff5d4d04a72eb64700d104106dd517665cd57/types_awscrt-0.28.4-py3-none-any.whl", hash = "sha256:2d453f9e27583fcc333771b69a5255a5a4e2c52f86e70f65f3c5a6789d3443d0", size = 42307, upload-time = "2025-11-11T02:56:52.231Z" },
+    { url = "https://files.pythonhosted.org/packages/68/12/b5eab7411236e59ef9b8ce53e877d28cc05fb869eaaeb366a91cd660220d/types_hvac-2.4.0.20251101-py3-none-any.whl", hash = "sha256:d7bcb6e12e25ef61d62845dbac90fdca1d94eee1264dc0b786d9057f56558381", size = 42425, upload-time = "2025-11-01T03:04:08.247Z" },
 ]
 
 [[package]]
-name = "types-s3transfer"
-version = "0.14.0"
+name = "types-requests"
+version = "2.32.4.20250913"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8e/9b/8913198b7fc700acc1dcb84827137bb2922052e43dde0f4fb0ed2dc6f118/types_s3transfer-0.14.0.tar.gz", hash = "sha256:17f800a87c7eafab0434e9d87452c809c290ae906c2024c24261c564479e9c95", size = 14218, upload-time = "2025-10-11T21:11:27.892Z" }
+dependencies = [
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/36/27/489922f4505975b11de2b5ad07b4fe1dca0bca9be81a703f26c5f3acfce5/types_requests-2.32.4.20250913.tar.gz", hash = "sha256:abd6d4f9ce3a9383f269775a9835a4c24e5cd6b9f647d64f88aa4613c33def5d", size = 23113, upload-time = "2025-09-13T02:40:02.309Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/92/c3/4dfb2e87c15ca582b7d956dfb7e549de1d005c758eb9a305e934e1b83fda/types_s3transfer-0.14.0-py3-none-any.whl", hash = "sha256:108134854069a38b048e9b710b9b35904d22a9d0f37e4e1889c2e6b58e5b3253", size = 19697, upload-time = "2025-10-11T21:11:26.749Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/20/9a227ea57c1285986c4cf78400d0a91615d25b24e257fd9e2969606bdfae/types_requests-2.32.4.20250913-py3-none-any.whl", hash = "sha256:78c9c1fffebbe0fa487a418e0fa5252017e9c60d1a2da394077f1780f655d7e1", size = 20658, upload-time = "2025-09-13T02:40:01.115Z" },
 ]
 
 [[package]]
