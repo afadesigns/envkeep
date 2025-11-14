@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import textwrap
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
@@ -725,7 +725,8 @@ def test_cli_doctor_reports_summary(tmp_path: Path, patch_config: MagicMock) -> 
     assert "Total warnings: 0" in result.stdout
     assert "Total info: 0" in result.stdout
     assert (
-        "Warnings breakdown: Duplicates: 0 · Extra variables: 0 · Invalid lines: 0" in result.stdout
+        "Warnings breakdown: Duplicates: 0 · Extra variables: 0 · Invalid lines: 0"
+        in result.stdout
     )
     assert "Impacted variables:" in result.stdout
     dev_env_str = str(dev_env)
@@ -1161,3 +1162,25 @@ def test_cli_diff_json_output(tmp_path: Path) -> None:
     assert report_payload["by_kind"]["missing"] == 0
     assert report_payload["variables"] == ["ALLOWED_HOSTS", "API_TOKEN", "DATABASE_URL", "DEBUG"]
     assert report_payload["top_variables"][0][0] == "ALLOWED_HOSTS"
+
+def test_load_spec_is_cached(tmp_path: Path, monkeypatch):
+    """Verify that load_spec is cached."""
+    spec_file = tmp_path / "envkeep.toml"
+    spec_file.write_text(
+        """
+        version = 1
+        [[variables]]
+        name = "FOO"
+        """
+    )
+
+    from envkeep import cli
+
+    # Clear the cache before the test
+    cli.load_spec.cache_clear()
+
+    with patch("envkeep.cli._load_spec_from_path") as mock_load:
+        cli.load_spec(spec_file)
+        cli.load_spec(spec_file)
+
+    assert mock_load.call_count == 1

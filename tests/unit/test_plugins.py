@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import textwrap
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
@@ -66,8 +67,25 @@ def test_plugin_discovery_and_fetching(tmp_path: Path, monkeypatch: pytest.Monke
     )
     spec_file.write_text(spec_text_fail, encoding="utf-8")
 
+    from envkeep import cli
+    cli.load_spec.cache_clear()
+
     result_fail = runner.invoke(app, ["check", str(env_file)])
 
     assert result_fail.exit_code == 1
     assert "REMOTE_VAR" in result_fail.stdout
     assert "invalid" in result_fail.stdout
+
+
+def test_load_backends_is_cached():
+    """Verify that load_backends is cached."""
+    from envkeep import plugins
+
+    # Clear the cache before the test
+    plugins.load_backends.cache_clear()
+
+    with patch("envkeep.plugins.entry_points") as mock_entry_points:
+        plugins.load_backends()
+        plugins.load_backends()
+
+    assert mock_entry_points.call_count == 1

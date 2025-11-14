@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from importlib.metadata import entry_points
 from typing import Protocol, runtime_checkable
 
@@ -30,6 +31,7 @@ class Backend(Protocol):
         ...  # pragma: no cover
 
 
+@lru_cache(maxsize=None)
 def load_backends() -> dict[str, Backend]:
     """Discover and load all installed backend plugins."""
     backends: dict[str, Backend] = {}

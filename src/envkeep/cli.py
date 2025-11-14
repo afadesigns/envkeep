@@ -447,6 +447,10 @@ def _merge_specs(base_spec: EnvSpec, imported_spec: EnvSpec) -> None:
     )
 
 
+from functools import lru_cache
+from .plugins import load_backends
+
+@lru_cache(maxsize=None)
 def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
     if path is None:
         config = load_config()
