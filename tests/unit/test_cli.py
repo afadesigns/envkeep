@@ -1040,6 +1040,32 @@ def test_cli_diff_rejects_spec_and_env_stdin(tmp_path: Path) -> None:
     assert "cannot combine spec from stdin" in result.stderr
 
 
+def test_cli_generate_docs() -> None:
+    result = runner.invoke(app, ["generate-docs", "--spec", str(EXAMPLE_SPEC)])
+    assert result.exit_code == 0
+    assert "| Variable | Type | Required | Description | Default |" in result.stdout
+    assert "| DATABASE_URL |" in result.stdout
+
+
+def test_cli_generate_docs_writes_to_file(tmp_path: Path) -> None:
+    output = tmp_path / "docs.md"
+    result = runner.invoke(
+        app,
+        [
+            "generate-docs",
+            "--spec",
+            str(EXAMPLE_SPEC),
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    assert output.exists()
+    content = output.read_text(encoding="utf-8")
+    assert "| Variable | Type | Required | Description | Default |" in content
+    assert "| DATABASE_URL |" in content
+
+
 def test_cli_inspect_json_output(patch_config: MagicMock) -> None:
     spec_file = patch_config.return_value.project_root / "envkeep.toml"
     spec_file.write_text(EXAMPLE_SPEC.read_text(), encoding="utf-8")

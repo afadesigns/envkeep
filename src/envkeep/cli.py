@@ -689,6 +689,38 @@ def generate(
 
 
 @app.command()
+def generate_docs(
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
+    output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
+) -> None:
+    """Generate Markdown documentation for the environment variables."""
+    _, stdin_spec = _read_spec_input(spec)
+    env_spec = load_spec(spec, stdin_data=stdin_spec)
+    content = _generate_docs_content(env_spec)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote documentation to {output}")
+    else:
+        typer.echo(content)
+
+
+def _generate_docs_content(env_spec: EnvSpec) -> str:
+    """Generate Markdown content for the environment variables."""
+    lines = [
+        "# Environment Variables",
+        "",
+        "| Variable | Type | Required | Description | Default |",
+        "|----------|------|----------|-------------|---------|",
+    ]
+    for var in env_spec.variables:
+        lines.append(
+            f"| {var.name} | {var.var_type.value} | {'Yes' if var.required else 'No'} | {var.description or ''} | {var.default or ''} |"
+        )
+    return "\n".join(lines)
+
+
+@app.command()
 def inspect(
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
     output_format: str = FORMAT_OPTION_DEFAULT,
