@@ -1072,6 +1072,14 @@ def test_cli_version() -> None:
     assert "envkeep version:" in result.stdout
 
 
+def test_cli_config() -> None:
+    result = runner.invoke(app, ["config"])
+    assert result.exit_code == 0
+    assert "Project root:" in result.stdout
+    assert "Spec path:" in result.stdout
+    assert "Profile base:" in result.stdout
+
+
 def test_cli_generate_schema() -> None:
     result = runner.invoke(app, ["generate-schema"])
     assert result.exit_code == 0

@@ -728,6 +728,15 @@ def version() -> None:
 
 
 @app.command()
+def config() -> None:
+    """Print the current configuration."""
+    config = load_config()
+    typer.echo(f"Project root: {config.project_root or '(not set)'}")
+    typer.echo(f"Spec path: {config.spec_path or '(not set)'}")
+    typer.echo(f"Profile base: {config.profile_base or '(not set)'}")
+
+
+@app.command()
 def generate_schema(
     output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
 ) -> None:
