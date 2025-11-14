@@ -118,7 +118,7 @@ class VariableType(str, Enum):
 @dataclass(slots=True)
 class VariableSpec:
     name: str
-    var_type: VariableType
+    var_type: VariableType | str
     required: bool = True
     default: str | None = None
     description: str | None = None
@@ -132,11 +132,17 @@ class VariableSpec:
     max_length: int | None = None
     min_value: int | float | None = None
     max_value: int | float | None = None
+    custom_validator: Callable[[str], str] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VariableSpec:
         name = data["name"]
-        var_type = VariableType(data.get("type", "string"))
+        type_str = data.get("type", "string")
+        try:
+            var_type: VariableType | str = VariableType(type_str)
+        except ValueError:
+            var_type = type_str
+
         pattern_value = data.get("pattern")
         compiled = re.compile(pattern_value) if pattern_value else None
         choices = tuple(str(choice) for choice in data.get("choices", []))
@@ -196,7 +202,11 @@ class VariableSpec:
                     raise ValueError(f"value must be at most {self.max_value}")
 
     def _validate_type(self, value: str) -> str:
-        return self.var_type.normalize(value)
+        if self.custom_validator:
+            return self.custom_validator(value)
+        if isinstance(self.var_type, VariableType):
+            return self.var_type.normalize(value)
+        raise ValueError(f"unsupported type: {self.var_type}")
 
     def validate(self, value: str) -> str:
         self._validate_not_empty(value)
@@ -217,7 +227,9 @@ class VariableSpec:
             return self.example
         if self.secret:
             return "<redacted>"
-        return self.var_type.default_example()
+        if isinstance(self.var_type, VariableType):
+            return self.var_type.default_example()
+        return "custom_value"
 
 
 @dataclass(slots=True)
@@ -258,6 +270,8 @@ class EnvSpec:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EnvSpec:
+        from .config import load_custom_validators
+
         version = int(data.get("version", 1))
         metadata = data.get("metadata", {})
         variables_data = data.get("variables", [])
@@ -268,6 +282,12 @@ class EnvSpec:
         profiles = [ProfileSpec.from_dict(item) for item in profiles_data]
         _assert_unique([profile.name for profile in profiles], entity="profile")
         imports = [str(item) for item in imports_data]
+
+        custom_validators = load_custom_validators()
+        for var in variables:
+            if isinstance(var.var_type, str) and var.var_type in custom_validators:
+                var.custom_validator = custom_validators[var.var_type]
+
         return cls(
             version=version,
             variables=variables,

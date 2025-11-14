@@ -109,7 +109,6 @@ def test_validate_allows_extra_when_requested(tmp_path: Path) -> None:
     assert report.warning_count == 1
     assert report.issues[0].code == "extra"
 
-
 def test_validate_surfaces_duplicate_keys(tmp_path: Path) -> None:
     spec = EnvSpec.from_file(EXAMPLE_SPEC)
     env_file = tmp_path / "duplicates.env"
@@ -189,3 +188,24 @@ def test_spec_maps_are_read_only() -> None:
     profiles["staging"] = spec.profiles[0]
     assert "NEW" in variables
     assert "staging" in profiles
+
+def test_custom_validator(tmp_path: Path) -> None:
+    """Verify that custom validators are loaded and used."""
+    spec = EnvSpec.from_dict(
+        {
+            "version": 1,
+            "variables": [
+                {"name": "MY_VAR", "type": "my-type"},
+            ],
+        }
+    )
+    snapshot = EnvSnapshot.from_text("MY_VAR=valid", source="test")
+    report = spec.validate(snapshot)
+    assert report.is_success
+
+    snapshot = EnvSnapshot.from_text("MY_VAR=invalid", source="test")
+    report = spec.validate(snapshot)
+    assert not report.is_success
+    assert report.error_count == 1
+    assert report.issues[0].variable == "MY_VAR"
+    assert "not valid" in report.issues[0].message

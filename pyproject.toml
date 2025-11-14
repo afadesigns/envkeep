@@ -140,3 +140,6 @@ show_missing = true
 [tool.black]
 line-length = 100
 skip-string-normalization = false
+
+[tool.envkeep.validation]
+my-type = "my_package.my_module:my_validator"

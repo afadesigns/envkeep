@@ -56,3 +56,25 @@ def load_config() -> Config:
         return Config.from_dict(envkeep_config, project_root=project_root)
     except (OSError, tomllib.TOMLDecodeError):
         return Config()
+
+import importlib
+from collections.abc import Callable
+
+def load_custom_validators() -> dict[str, Callable[[str], str]]:
+    """Load custom validators from pyproject.toml."""
+    pyproject_path = find_pyproject_toml()
+    if not pyproject_path:
+        return {}
+
+    try:
+        with pyproject_path.open("rb") as f:
+            data = tomllib.load(f)
+        validators_config = data.get("tool", {}).get("envkeep", {}).get("validation", {})
+        validators = {}
+        for name, path in validators_config.items():
+            module_name, func_name = path.split(":")
+            module = importlib.import_module(module_name)
+            validators[name] = getattr(module, func_name)
+        return validators
+    except (OSError, tomllib.TOMLDecodeError, ImportError, AttributeError):
+        return {}
