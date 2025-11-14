@@ -17,8 +17,9 @@ from . import __version__
 from ._compat import tomllib
 from .cache import Cache
 from .config import load_config
+from .display import render_diff_report, render_validation_report
 from .plugins import load_backends
-from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
+from .report import DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
 from .spec import EnvSpec, ProfileSpec
 from .utils import (
@@ -59,6 +60,48 @@ app = typer.Typer(
 console = Console()
 DEFAULT_OUTPUT_FORMAT = "text"
 DEFAULT_PROFILE = "all"
+
+
+SPEC_OPTION = typer.Option(
+    None,
+    "--spec",
+    "-s",
+    help="Path to envkeep spec (searches parents if not specified).",
+)
+FORMAT_OPTION = typer.Option(
+    DEFAULT_OUTPUT_FORMAT,
+    "--format",
+    "-f",
+    help="Output format: text or json.",
+)
+FORMAT_OPTION.case_sensitive = False
+PROFILE_OPTION = typer.Option(
+    DEFAULT_PROFILE,
+    "--profile",
+    "-p",
+    help="Profile to validate (all to run every profile).",
+)
+PROFILE_OPTION.show_default = True
+PROFILE_BASE_OPTION = typer.Option(
+    None,
+    "--profile-base",
+    help="Override the base directory used to resolve relative profile env_file paths.",
+)
+GENERATE_OUTPUT_OPTION = typer.Option(
+    None,
+    "--output",
+    "-o",
+    help="Where to write the generated file.",
+)
+ENV_FILE_ARGUMENT = typer.Argument(..., help="Path to the environment file.")
+DIFF_FIRST_ARGUMENT = typer.Argument(..., help="Baseline environment file.")
+DIFF_SECOND_ARGUMENT = typer.Argument(..., help="Target environment file.")
+
+SPEC_OPTION_DEFAULT = cast(OptionalPath, SPEC_OPTION)
+FORMAT_OPTION_DEFAULT = cast(str, FORMAT_OPTION)
+PROFILE_OPTION_DEFAULT = cast(str, PROFILE_OPTION)
+PROFILE_BASE_OPTION_DEFAULT = cast(OptionalPath, PROFILE_BASE_OPTION)
+GENERATE_OUTPUT_OPTION_DEFAULT = cast(OptionalPath, GENERATE_OUTPUT_OPTION)
 
 
 @app.callback()
@@ -145,48 +188,6 @@ def _coerce_output_format(raw: str) -> OutputFormat:
     except typer.BadParameter as exc:
         typer.echo(str(exc))
         raise typer.Exit(code=2) from exc
-
-
-SPEC_OPTION = _option_with_value(
-    None,
-    "--spec",
-    "-s",
-    help="Path to envkeep spec (searches parents if not specified).",
-)
-FORMAT_OPTION = _option_with_value(
-    DEFAULT_OUTPUT_FORMAT,
-    "--format",
-    "-f",
-    help="Output format: text or json.",
-)
-FORMAT_OPTION.case_sensitive = False
-PROFILE_OPTION = _option_with_value(
-    DEFAULT_PROFILE,
-    "--profile",
-    "-p",
-    help="Profile to validate (all to run every profile).",
-)
-PROFILE_OPTION.show_default = True
-PROFILE_BASE_OPTION = _option_with_value(
-    None,
-    "--profile-base",
-    help="Override the base directory used to resolve relative profile env_file paths.",
-)
-GENERATE_OUTPUT_OPTION = _option_with_value(
-    None,
-    "--output",
-    "-o",
-    help="Where to write the generated file.",
-)
-ENV_FILE_ARGUMENT = typer.Argument(..., help="Path to the environment file.")
-DIFF_FIRST_ARGUMENT = typer.Argument(..., help="Baseline environment file.")
-DIFF_SECOND_ARGUMENT = typer.Argument(..., help="Target environment file.")
-
-SPEC_OPTION_DEFAULT = cast(OptionalPath, SPEC_OPTION)
-FORMAT_OPTION_DEFAULT = cast(str, FORMAT_OPTION)
-PROFILE_OPTION_DEFAULT = cast(str, PROFILE_OPTION)
-PROFILE_BASE_OPTION_DEFAULT = cast(OptionalPath, PROFILE_BASE_OPTION)
-GENERATE_OUTPUT_OPTION_DEFAULT = cast(OptionalPath, GENERATE_OUTPUT_OPTION)
 
 
 def _emit_json(payload: Any) -> None:
@@ -288,50 +289,6 @@ def _handle_diff_output(
     else:
         render_diff_report(report, left=left, right=right, top_limit=limit)
     return 0 if report.is_clean() else 1
-
-
-def _format_severity_summary(report: ValidationReport, *, top_limit: int | None) -> str:
-    limit = normalized_limit(top_limit)
-    totals = report.severity_totals()
-    ordered = [
-        ("Errors", IssueSeverity.ERROR.value),
-        ("Warnings", IssueSeverity.WARNING.value),
-        ("Info", IssueSeverity.INFO.value),
-    ]
-    parts = [f"{label}: {totals[key]}" for label, key in ordered if totals[key] > 0]
-    if not parts:
-        parts = [f"{label}: {totals[key]}" for label, key in ordered]
-    top_variables: tuple[str, ...]
-    if limit == 0:
-        top_variables = ()
-    else:
-        top_source = report.top_variables(None if limit is None else limit)
-        top_variables = tuple(name for name, _ in top_source)
-    if top_variables:
-        parts.append("Impacted: " + ", ".join(top_variables))
-    return " · ".join(parts)
-
-
-def _format_diff_summary(report: DiffReport, *, top_limit: int | None) -> str:
-    limit = normalized_limit(top_limit)
-    summary = report.counts_by_kind()
-    ordered = [
-        ("Missing", DiffKind.MISSING.value),
-        ("Extra", DiffKind.EXTRA.value),
-        ("Changed", DiffKind.CHANGED.value),
-    ]
-    parts = [f"{label}: {summary[key]}" for label, key in ordered if summary[key] > 0]
-    if not parts:
-        parts = [f"{label}: {summary[key]}" for label, key in ordered]
-    top_variables: tuple[str, ...]
-    if limit == 0:
-        top_variables = ()
-    else:
-        top_source = report.top_variables(None if limit is None else limit)
-        top_variables = tuple(name for name, _ in top_source)
-    if top_variables:
-        parts.append("Impacted: " + ", ".join(top_variables))
-    return " · ".join(parts)
 
 
 def _emit_doctor_json(
@@ -470,43 +427,121 @@ def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
     return base_spec
 
 
-@app.command()
-def init(
-    env_file: Path = typer.Argument(..., help="Path to environment file to import."),
-    output: Path = typer.Option(
-        "envkeep.toml",
-        "--output",
-        "-o",
-        help="Path where spec file should be written.",
-    ),
-    description: str = typer.Option(
-        "My application",
-        "--description",
-        help="Description of the application.",
-    ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Overwrite an existing spec file without prompting.",
-    ),
-) -> None:
-    """Create a new envkeep.toml spec from an existing .env file."""
-    if not env_file.exists():
-        _usage_error(f"input file not found: {env_file}")
-    if output.exists() and not force:
-        if not typer.confirm(f"overwrite existing file? {output}"):
-            typer.echo("Aborted.")
-            raise typer.Exit(code=1)
-    snapshot = EnvSnapshot.from_env_file(env_file)
-    spec = EnvSpec.from_snapshot(snapshot, description=description)
-    content = spec.generate_example(redact_secrets=False)
-    try:
-        output.write_text(content, encoding="utf-8")
-        typer.echo(f"Wrote spec to {output}")
-    except OSError as exc:
-        _usage_error(f"failed to write spec: {exc}")
+def _aggregate_doctor_results(
+    results: list[dict[str, Any]],
+    top_limit: int,
+) -> dict[str, Any]:
+    """Aggregate results from multiple doctor reports."""
+    total_errors = 0
+    total_warnings = 0
+    total_info = 0
+    aggregate_warning_counts = {
+        "duplicates": 0,
+        "extra_variables": 0,
+        "invalid_lines": 0,
+    }
+    aggregate_issue_variables: set[str] = set()
+    aggregated_codes: Counter[str] = Counter()
+    aggregated_variables: set[str] = set()
+    aggregated_variable_counts: Counter[str] = Counter()
 
+    for item in results:
+        report = item.get("report")
+        if not report:
+            continue
+
+        severity_totals = report.severity_totals()
+        total_errors += severity_totals[IssueSeverity.ERROR.value]
+        total_warnings += severity_totals[IssueSeverity.WARNING.value]
+        total_info += severity_totals[IssueSeverity.INFO.value]
+
+        warnings_summary = report.warning_summary()
+        aggregate_warning_counts["duplicates"] += len(warnings_summary["duplicates"])
+        aggregate_warning_counts["extra_variables"] += len(warnings_summary["extra_variables"])
+        aggregate_warning_counts["invalid_lines"] += len(warnings_summary["invalid_lines"])
+
+        full_summary = report.summary()
+        aggregate_issue_variables.update(full_summary.get("variables", []))
+        aggregated_codes.update(full_summary.get("codes", {}))
+        aggregated_variables.update(full_summary.get("variables", ()))
+        for variable, count in full_summary.get("top_variables", []):
+            aggregated_variable_counts[variable] += count
+
+    aggregated_most_common_codes = sorted_counter(aggregated_codes)
+    aggregated_top_variables = sorted_counter(aggregated_variable_counts)
+    if top_limit == 0:
+        aggregated_most_common_codes = []
+        aggregated_top_variables = []
+    else:
+        aggregated_most_common_codes = aggregated_most_common_codes[:top_limit]
+        aggregated_top_variables = aggregated_top_variables[:top_limit]
+
+    return {
+        "total_errors": total_errors,
+        "total_warnings": total_warnings,
+        "total_info": total_info,
+        "aggregate_warning_counts": aggregate_warning_counts,
+        "aggregate_issue_variables": aggregate_issue_variables,
+        "aggregated_most_common_codes": aggregated_most_common_codes,
+        "aggregated_top_variables": aggregated_top_variables,
+        "aggregated_variables_list": casefold_sorted(aggregated_variables),
+    }
+
+
+def _render_doctor_text_summary(
+    checked_profiles: int,
+    selected_profiles: int,
+    missing_profiles: int,
+    aggregated_results: dict[str, Any],
+    top_limit: int,
+    resolved_profile_records: list[tuple[str, str, Path, bool]],
+) -> None:
+    """Render the text summary for the doctor command."""
+    console.rule("Doctor Summary")
+    console.print(f"Profiles checked: {checked_profiles}/{selected_profiles}")
+    console.print(
+        " · ".join(
+            [
+                f"Missing profiles: {missing_profiles}",
+                f"Total errors: {aggregated_results['total_errors']}",
+                f"Total warnings: {aggregated_results['total_warnings']}",
+                f"Total info: {aggregated_results['total_info']}",
+            ],
+        ),
+    )
+    console.print(
+        "Warnings breakdown: "
+        f"Duplicates: {aggregated_results['aggregate_warning_counts']['duplicates']} · "
+        f"Extra variables: {aggregated_results['aggregate_warning_counts']['extra_variables']} · "
+        f"Invalid lines: {aggregated_results['aggregate_warning_counts']['invalid_lines']}",
+    )
+    if aggregated_results["aggregate_issue_variables"]:
+        sorted_variables = casefold_sorted(aggregated_results["aggregate_issue_variables"])
+        if top_limit is not None:
+            display_count = min(len(sorted_variables), top_limit)
+        else:
+            display_count = len(sorted_variables)
+        console.print("Impacted variables: " + ", ".join(sorted_variables[:display_count]))
+    else:
+        console.print("Impacted variables: ")
+    if aggregated_results["aggregated_most_common_codes"]:
+        formatted_codes = ", ".join(
+            f"{code}({count})" for code, count in aggregated_results["aggregated_most_common_codes"]
+        )
+        console.print(f"Top issue codes: {formatted_codes}")
+    if aggregated_results["aggregated_top_variables"]:
+        formatted_variables = ", ".join(
+            f"{variable}({count})"
+            for variable, count in aggregated_results["aggregated_top_variables"]
+        )
+        console.print(f"Top impacted variables: {formatted_variables}")
+    else:
+        console.print("Top impacted variables: ")
+    if resolved_profile_records:
+        console.print("Resolved profile paths:")
+        for name, env_file_raw, resolved_path, exists in resolved_profile_records:
+            status = "" if exists else " (missing)"
+            console.print(f"  • {name}: {env_file_raw} -> {resolved_path}{status}")
 
 @app.command()
 def check(
@@ -745,121 +780,42 @@ def inspect(
     console.print(table)
 
 
-def _aggregate_doctor_results(
-    results: list[dict[str, Any]],
-    top_limit: int,
-) -> dict[str, Any]:
-    """Aggregate results from multiple doctor reports."""
-    total_errors = 0
-    total_warnings = 0
-    total_info = 0
-    aggregate_warning_counts = {
-        "duplicates": 0,
-        "extra_variables": 0,
-        "invalid_lines": 0,
-    }
-    aggregate_issue_variables: set[str] = set()
-    aggregated_codes: Counter[str] = Counter()
-    aggregated_variables: set[str] = set()
-    aggregated_variable_counts: Counter[str] = Counter()
-
-    for item in results:
-        report = item.get("report")
-        if not report:
-            continue
-
-        severity_totals = report.severity_totals()
-        total_errors += severity_totals[IssueSeverity.ERROR.value]
-        total_warnings += severity_totals[IssueSeverity.WARNING.value]
-        total_info += severity_totals[IssueSeverity.INFO.value]
-
-        warnings_summary = report.warning_summary()
-        aggregate_warning_counts["duplicates"] += len(warnings_summary["duplicates"])
-        aggregate_warning_counts["extra_variables"] += len(warnings_summary["extra_variables"])
-        aggregate_warning_counts["invalid_lines"] += len(warnings_summary["invalid_lines"])
-
-        full_summary = report.summary()
-        aggregate_issue_variables.update(full_summary.get("variables", []))
-        aggregated_codes.update(full_summary.get("codes", {}))
-        aggregated_variables.update(full_summary.get("variables", ()))
-        for variable, count in full_summary.get("top_variables", []):
-            aggregated_variable_counts[variable] += count
-
-    aggregated_most_common_codes = sorted_counter(aggregated_codes)
-    aggregated_top_variables = sorted_counter(aggregated_variable_counts)
-    if top_limit == 0:
-        aggregated_most_common_codes = []
-        aggregated_top_variables = []
-    else:
-        aggregated_most_common_codes = aggregated_most_common_codes[:top_limit]
-        aggregated_top_variables = aggregated_top_variables[:top_limit]
-
-    return {
-        "total_errors": total_errors,
-        "total_warnings": total_warnings,
-        "total_info": total_info,
-        "aggregate_warning_counts": aggregate_warning_counts,
-        "aggregate_issue_variables": aggregate_issue_variables,
-        "aggregated_most_common_codes": aggregated_most_common_codes,
-        "aggregated_top_variables": aggregated_top_variables,
-        "aggregated_variables_list": casefold_sorted(aggregated_variables),
-    }
-
-
-def _render_doctor_text_summary(
-    checked_profiles: int,
-    selected_profiles: int,
-    missing_profiles: int,
-    aggregated_results: dict[str, Any],
-    top_limit: int,
-    resolved_profile_records: list[tuple[str, str, Path, bool]],
+@app.command()
+def init(
+    env_file: Path = typer.Argument(..., help="Path to environment file to import."),
+    output: Path = typer.Option(
+        "envkeep.toml",
+        "--output",
+        "-o",
+        help="Path where spec file should be written.",
+    ),
+    description: str = typer.Option(
+        "My application",
+        "--description",
+        help="Description of the application.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite an existing spec file without prompting.",
+    ),
 ) -> None:
-    """Render the text summary for the doctor command."""
-    console.rule("Doctor Summary")
-    console.print(f"Profiles checked: {checked_profiles}/{selected_profiles}")
-    console.print(
-        " · ".join(
-            [
-                f"Missing profiles: {missing_profiles}",
-                f"Total errors: {aggregated_results['total_errors']}",
-                f"Total warnings: {aggregated_results['total_warnings']}",
-                f"Total info: {aggregated_results['total_info']}",
-            ],
-        ),
-    )
-    console.print(
-        "Warnings breakdown: "
-        f"Duplicates: {aggregated_results['aggregate_warning_counts']['duplicates']} · "
-        f"Extra variables: {aggregated_results['aggregate_warning_counts']['extra_variables']} · "
-        f"Invalid lines: {aggregated_results['aggregate_warning_counts']['invalid_lines']}",
-    )
-    if aggregated_results["aggregate_issue_variables"]:
-        sorted_variables = casefold_sorted(aggregated_results["aggregate_issue_variables"])
-        if top_limit is not None:
-            display_count = min(len(sorted_variables), top_limit)
-        else:
-            display_count = len(sorted_variables)
-        console.print("Impacted variables: " + ", ".join(sorted_variables[:display_count]))
-    else:
-        console.print("Impacted variables: ")
-    if aggregated_results["aggregated_most_common_codes"]:
-        formatted_codes = ", ".join(
-            f"{code}({count})" for code, count in aggregated_results["aggregated_most_common_codes"]
-        )
-        console.print(f"Top issue codes: {formatted_codes}")
-    if aggregated_results["aggregated_top_variables"]:
-        formatted_variables = ", ".join(
-            f"{variable}({count})"
-            for variable, count in aggregated_results["aggregated_top_variables"]
-        )
-        console.print(f"Top impacted variables: {formatted_variables}")
-    else:
-        console.print("Top impacted variables: ")
-    if resolved_profile_records:
-        console.print("Resolved profile paths:")
-        for name, env_file_raw, resolved_path, exists in resolved_profile_records:
-            status = "" if exists else " (missing)"
-            console.print(f"  • {name}: {env_file_raw} -> {resolved_path}{status}")
+    """Create a new envkeep.toml spec from an existing .env file."""
+    if not env_file.exists():
+        _usage_error(f"input file not found: {env_file}")
+    if output.exists() and not force:
+        if not typer.confirm(f"overwrite existing file? {output}"):
+            typer.echo("Aborted.")
+            raise typer.Exit(code=1)
+    snapshot = EnvSnapshot.from_env_file(env_file)
+    spec = EnvSpec.from_snapshot(snapshot, description=description)
+    content = spec.generate_example(redact_secrets=False)
+    try:
+        output.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote spec to {output}")
+    except OSError as exc:
+        _usage_error(f"failed to write spec: {exc}")
 
 
 @app.command()
@@ -1019,98 +975,115 @@ def doctor(
 
     raise typer.Exit(code=exit_code)
 
+def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
+    """Fetch values from all remote backends defined in the spec."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def render_validation_report(
-    report: ValidationReport,
-    *,
-    source: str,
-    top_limit: int | None = None,
-) -> None:
-    console.print(f"Validating [bold]{source}[/bold]")
-    if not report.issues:
-        console.print("[green]All checks passed.[/green]")
-        return
-    style_map = {
-        IssueSeverity.ERROR: "red",
-        IssueSeverity.WARNING: "yellow",
-        IssueSeverity.INFO: "blue",
-    }
-    label_map = {
-        IssueSeverity.ERROR: "Errors",
-        IssueSeverity.WARNING: "Warnings",
-        IssueSeverity.INFO: "Info",
-    }
-    first_section = True
-    for severity in report.non_empty_severities():
-        issues = report.issues_by_severity(severity)
-        if not first_section:
-            console.print()
-        first_section = False
-        console.print(f"[bold underline]{label_map[severity]}[/]")
-        table = Table(show_header=True, header_style="bold")
-        table.add_column("Severity")
-        table.add_column("Variable")
-        table.add_column("Code")
-        table.add_column("Message")
-        table.add_column("Hint", overflow="fold")
-        style = style_map[severity]
-        for issue in issues:
-            table.add_row(
-                f"[{style}]{severity.value.upper()}[/{style}]",
-                issue.variable,
-                issue.code,
-                issue.message,
-                issue.hint or "",
-            )
-        console.print(table)
-    console.print(_format_severity_summary(report, top_limit=top_limit))
+    backends = load_backends()
+    if not backends:
+        return {}
+
+    sources_by_backend: dict[str, dict[str, str]] = defaultdict(dict)
+    for var in spec.variables:
+        if var.source:
+            try:
+                backend_name, source_uri = var.source.split(":", 1)
+                if backend_name in backends:
+                    sources_by_backend[backend_name][var.name] = source_uri
+            except ValueError:
+                # Ignore malformed source strings
+                pass
+
+    fetched_values: dict[str, str] = {}
+    with ThreadPoolExecutor() as executor:
+        future_to_backend = {
+            executor.submit(backends[backend_name].fetch, sources): backend_name
+            for backend_name, sources in sources_by_backend.items()
+        }
+        for future in as_completed(future_to_backend):
+            backend_name = future_to_backend[future]
+            try:
+                results = future.result()
+                fetched_values.update(results)
+            except Exception:
+                logger.exception("Plugin %s failed to fetch secrets", backend_name)
+
+    return fetched_values
 
 
-def render_diff_report(
-    report: DiffReport,
-    *,
-    left: str,
-    right: str,
-    top_limit: int | None = None,
-) -> None:
-    console.print(f"Diffing [bold]{left}[/bold] -> [bold]{right}[/bold]")
-    if report.is_clean():
-        console.print("[green]No drift detected.[/green]")
-        return
-    style_map = {
-        DiffKind.MISSING: "yellow",
-        DiffKind.EXTRA: "blue",
-        DiffKind.CHANGED: "red",
-    }
-    label_map = {
-        DiffKind.MISSING: "Missing",
-        DiffKind.EXTRA: "Extra",
-        DiffKind.CHANGED: "Changed",
-    }
-    first_section = True
-    for kind in report.non_empty_kinds():
-        entries = report.entries_by_kind(kind)
-        if not first_section:
-            console.print()
-        first_section = False
-        console.print(f"[bold underline]{label_map[kind]}[/]")
-        table = Table(show_header=True, header_style="bold")
-        table.add_column("Variable")
-        table.add_column("Change")
-        table.add_column("Left")
-        table.add_column("Right")
-        style = style_map[kind]
-        for entry in entries:
-            table.add_row(
-                entry.variable,
-                f"[{style}]{entry.kind.value.upper()}[/{style}]",
-                entry.redacted_left() or "",
-                entry.redacted_right() or "",
-            )
-        console.print(table)
-    console.print(_format_diff_summary(report, top_limit=top_limit))
-    console.print(f"Total differences: {report.change_count}")
+class OutputFormat(str, Enum):
+    TEXT = "text"
+    JSON = "json"
 
 
-if __name__ == "__main__":
-    app()
+def _parse_output_format(value: OutputFormat | str) -> OutputFormat:
+    if isinstance(value, OutputFormat):
+        return value
+    try:
+        return OutputFormat(str(value).lower())
+    except ValueError as exc:
+        allowed = ", ".join(fmt.value for fmt in OutputFormat)
+        raise typer.BadParameter(
+            f"Invalid value for '--format': output format must be one of: {allowed}",
+        ) from exc
+
+
+def _option_with_value(*args: Any, **kwargs: Any) -> typer.models.OptionInfo:
+    option = cast(typer.models.OptionInfo, typer.Option(*args, **kwargs))
+    if option.param_decls:
+        option.param_decls = tuple(decl for decl in option.param_decls if isinstance(decl, str))
+    else:
+        option.param_decls = ()
+    if _CLICK_UNSET is not None and hasattr(option, "flag_value"):
+        option.flag_value = _CLICK_UNSET  # Click <8.1 treats flag_value=None as a boolean flag
+    return option
+
+
+def _coerce_output_format(raw: str) -> OutputFormat:
+    try:
+        return _parse_output_format(raw)
+    except typer.BadParameter as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=2) from exc
+
+
+SPEC_OPTION = _option_with_value(
+    None,
+    "--spec",
+    "-s",
+    help="Path to envkeep spec (searches parents if not specified).",
+)
+FORMAT_OPTION = _option_with_value(
+    DEFAULT_OUTPUT_FORMAT,
+    "--format",
+    "-f",
+    help="Output format: text or json.",
+)
+FORMAT_OPTION.case_sensitive = False
+PROFILE_OPTION = _option_with_value(
+    DEFAULT_PROFILE,
+    "--profile",
+    "-p",
+    help="Profile to validate (all to run every profile).",
+)
+PROFILE_OPTION.show_default = True
+PROFILE_BASE_OPTION = _option_with_value(
+    None,
+    "--profile-base",
+    help="Override the base directory used to resolve relative profile env_file paths.",
+)
+GENERATE_OUTPUT_OPTION = _option_with_value(
+    None,
+    "--output",
+    "-o",
+    help="Where to write the generated file.",
+)
+ENV_FILE_ARGUMENT = typer.Argument(..., help="Path to the environment file.")
+DIFF_FIRST_ARGUMENT = typer.Argument(..., help="Baseline environment file.")
+DIFF_SECOND_ARGUMENT = typer.Argument(..., help="Target environment file.")
+
+SPEC_OPTION_DEFAULT = cast(OptionalPath, SPEC_OPTION)
+FORMAT_OPTION_DEFAULT = cast(str, FORMAT_OPTION)
+PROFILE_OPTION_DEFAULT = cast(str, PROFILE_OPTION)
+PROFILE_BASE_OPTION_DEFAULT = cast(OptionalPath, PROFILE_BASE_OPTION)
+GENERATE_OUTPUT_OPTION_DEFAULT = cast(OptionalPath, GENERATE_OUTPUT_OPTION)
