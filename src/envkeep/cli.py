@@ -77,6 +77,8 @@ def main(
 
 def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
     """Fetch values from all remote backends defined in the spec."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     backends = load_backends()
     if not backends:
         return {}
@@ -93,13 +95,18 @@ def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
                 pass
 
     fetched_values: dict[str, str] = {}
-    for backend_name, sources in sources_by_backend.items():
-        backend = backends[backend_name]
-        try:
-            results = backend.fetch(sources)
-            fetched_values.update(results)
-        except Exception:
-            logger.exception("Plugin %s failed to fetch secrets", backend_name)
+    with ThreadPoolExecutor() as executor:
+        future_to_backend = {
+            executor.submit(backends[backend_name].fetch, sources): backend_name
+            for backend_name, sources in sources_by_backend.items()
+        }
+        for future in as_completed(future_to_backend):
+            backend_name = future_to_backend[future]
+            try:
+                results = future.result()
+                fetched_values.update(results)
+            except Exception:
+                logger.exception("Plugin %s failed to fetch secrets", backend_name)
 
     return fetched_values
 
