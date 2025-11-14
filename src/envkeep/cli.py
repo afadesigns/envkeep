@@ -312,6 +312,7 @@ def _emit_doctor_json(
     aggregated_duplicates: set[str] = set()
     aggregated_extras: set[str] = set()
     aggregated_invalid_lines: list[dict[str, Any]] = []
+    total_warnings = 0
     for item in results:
         summary = item.get("summary")
         if not summary:
@@ -321,6 +322,7 @@ def _emit_doctor_json(
             severity_totals[key] += value
         warnings = item.get("warnings")
         if warnings:
+            total_warnings += warnings.get("total", 0)
             aggregated_duplicates.update(warnings.get("duplicates", ()))
             aggregated_extras.update(warnings.get("extra_variables", ()))
             profile = item.get("profile")
@@ -346,6 +348,7 @@ def _emit_doctor_json(
         "profile_base_dir": profile_base_dir,
     }
     warnings_payload = {
+        "total": total_warnings,
         "duplicates": casefold_sorted(aggregated_duplicates),
         "extra_variables": casefold_sorted(aggregated_extras),
         "invalid_lines": sorted(
@@ -846,6 +849,7 @@ def doctor(
     ),
 ) -> None:
     """Validate one or more profiles declared in the spec."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
@@ -893,57 +897,68 @@ def doctor(
         checked_profiles = 0
         top_limit = normalized_limit(summary_top) or 0
         resolved_profile_records: list[tuple[str, str, Path, bool]] = []
-        for entry in selected_profiles:
-            name = entry["name"]
-            env_file_raw = entry["env_file"]
-            env_path = entry["path"]
-            exists = env_path.exists()
-            resolved_profile_records.append((name, env_file_raw, env_path, exists))
-            if not exists:
-                missing_profiles += 1
-                if use_json:
-                    results.append(
-                        {
-                            "profile": name,
-                            "env_file": env_file_raw,
-                            "resolved_env_file": str(env_path),
-                            "path": str(env_path),
-                            "error": "missing env file",
-                        },
-                    )
-                else:
-                    typer.echo(f"Profile {name}: missing env file {env_path}")
-                exit_code = 1
-                continue
 
-            report = cache.get_report(env_path, spec_path) if cache else None
-            if report is None:
-                snapshot = EnvSnapshot.from_env_file(env_path)
-                report = env_spec.validate(snapshot, allow_extra=allow_extra)
-                if cache:
-                    cache.set_report(env_path, spec_path, report)
+        with ThreadPoolExecutor() as executor:
+            future_to_profile = {
+                executor.submit(
+                    _validate_profile,
+                    entry,
+                    spec_path,
+                    stdin_spec,
+                    cache,
+                    allow_extra,
+                    top_limit,
+                ): entry
+                for entry in selected_profiles
+            }
+            for future in as_completed(future_to_profile):
+                entry = future_to_profile[future]
+                name = entry["name"]
+                env_file_raw = entry["env_file"]
+                env_path = entry["path"]
+                try:
+                    report, exists = future.result()
+                    resolved_profile_records.append((name, env_file_raw, env_path, exists))
+                    if not exists:
+                        missing_profiles += 1
+                        if use_json:
+                            results.append(
+                                {
+                                    "profile": name,
+                                    "env_file": env_file_raw,
+                                    "resolved_env_file": str(env_path),
+                                    "path": str(env_path),
+                                    "error": "missing env file",
+                                },
+                            )
+                        else:
+                            typer.echo(f"Profile {name}: missing env file {env_path}")
+                        exit_code = 1
+                        continue
 
-            checked_profiles += 1
-            if use_json:
-                summary = report.summary(top_limit=top_limit)
+                    checked_profiles += 1
+                    if use_json:
+                        summary = report.summary(top_limit=top_limit)
+                        results.append(
+                            {
+                                "profile": name,
+                                "env_file": env_file_raw,
+                                "resolved_env_file": str(env_path),
+                                "path": str(env_path),
+                                "report": report,
+                                "summary": summary,
+                                "warnings": report.warning_summary(),
+                            },
+                        )
+                    else:
+                        console.rule(f"Profile: {name}")
+                        render_validation_report(report, source=str(env_path), top_limit=top_limit)
+                    if report.has_errors or (fail_on_warnings and report.has_warnings):
+                        exit_code = 1
+                except Exception as exc:
+                    logger.exception("Error validating profile %s: %s", name, exc)
+                    exit_code = 1
 
-                results.append(
-                    {
-                        "profile": name,
-                        "env_file": env_file_raw,
-                        "resolved_env_file": str(env_path),
-                        "path": str(env_path),
-                        "report": report,
-                        "summary": summary,
-                        "warnings": report.warning_summary(),
-                    },
-                )
-            else:
-                console.rule(f"Profile: {name}")
-                render_validation_report(report, source=str(env_path), top_limit=top_limit)
-            if report.has_errors or (fail_on_warnings and report.has_warnings):
-                exit_code = 1
-        
         if missing_profiles > 0:
             exit_code = 1
 
@@ -974,6 +989,29 @@ def doctor(
             )
 
     raise typer.Exit(code=exit_code)
+
+
+def _validate_profile(
+    entry: dict[str, Any],
+    spec_path: Path,
+    stdin_spec: str | None,
+    cache: Cache | None,
+    allow_extra: bool,
+    top_limit: int,
+) -> tuple[ValidationReport, bool]:
+    env_path = entry["path"]
+    exists = env_path.exists()
+    if not exists:
+        return ValidationReport(), False
+
+    report = cache.get_report(env_path, spec_path) if cache else None
+    if report is None:
+        snapshot = EnvSnapshot.from_env_file(env_path)
+        env_spec = load_spec(spec_path, stdin_data=stdin_spec)
+        report = env_spec.validate(snapshot, allow_extra=allow_extra)
+        if cache:
+            cache.set_report(env_path, spec_path, report)
+    return report, True
 
 def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
     """Fetch values from all remote backends defined in the spec."""
