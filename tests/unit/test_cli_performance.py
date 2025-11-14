@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
-from envkeep.cli import _fetch_remote_values, app
+from envkeep.cli import _fetch_remote_values
 from envkeep.spec import EnvSpec
 
 
@@ -23,8 +22,8 @@ def test_fetch_remote_values_parallel(caplog):
             "variables": [
                 {"name": "VAR1", "source": "mock1:uri1"},
                 {"name": "VAR2", "source": "mock2:uri2"},
-            ]
-        }
+            ],
+        },
     )
 
     mock_backend1 = MagicMock()
@@ -51,8 +50,8 @@ def test_fetch_remote_values_with_errors(caplog):
             "variables": [
                 {"name": "VAR1", "source": "mock1:uri1"},
                 {"name": "VAR2", "source": "mock2:uri2"},
-            ]
-        }
+            ],
+        },
     )
 
     mock_backend1 = MagicMock()

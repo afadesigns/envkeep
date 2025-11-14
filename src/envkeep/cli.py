@@ -43,7 +43,7 @@ def version_callback(value: bool) -> None:
 try:  # pragma: no cover - Click 8.0 compatibility
     from click._utils import UNSET as _CLICK_UNSET
 except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
-    _CLICK_UNSET: Sentinel | None = None
+    _CLICK_UNSET: Any | None = None
 
 if _CLICK_UNSET is None:  # pragma: no cover - Typer >=0.12 on newer Click versions
     warnings.filterwarnings(  # type: ignore[unreachable]
