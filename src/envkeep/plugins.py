@@ -43,3 +43,14 @@ def load_backends() -> dict[str, Backend]:
         except Exception:
             logger.exception("Failed to load plugin: %s", entry_point.name)
     return backends
+
+
+def load_validator(name: str) -> callable | None:
+    """Discover and load a custom validator function."""
+    for entry_point in entry_points(group="envkeep.validators"):
+        if entry_point.name == name:
+            try:
+                return entry_point.load()
+            except Exception:
+                logger.exception("Failed to load validator: %s", entry_point.name)
+    return None

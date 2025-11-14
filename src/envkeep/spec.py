@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any, cast
 from urllib.parse import urlparse
 
+from . import plugins
 from ._compat import tomllib
 from .report import (
     DiffEntry,
@@ -152,6 +153,17 @@ class VariableSpec:
         example = data.get("example")
         if example is not None:
             example = str(example)
+        
+        validators = []
+        for validator in data.get("validators", []):
+            if isinstance(validator, str):
+                loaded = plugins.load_validator(validator)
+                if loaded is None:
+                    raise ValueError(f"unknown validator: {validator}")
+                validators.append(loaded)
+            else:
+                validators.append(validator)
+
         instance = cls(
             name=name,
             var_type=var_type,
@@ -168,7 +180,7 @@ class VariableSpec:
             max_length=data.get("max_length"),
             min_value=data.get("min_value"),
             max_value=data.get("max_value"),
-            validators=data.get("validators", []),
+            validators=validators,
         )
         if default is not None:
             instance.validate(default)
