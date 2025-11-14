@@ -721,6 +721,13 @@ def _generate_docs_content(env_spec: EnvSpec) -> str:
 
 
 @app.command()
+def version() -> None:
+    """Print the version and exit."""
+    typer.echo(f"envkeep version: {__version__}")
+    raise typer.Exit()
+
+
+@app.command()
 def generate_schema(
     output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
 ) -> None:

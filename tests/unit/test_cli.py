@@ -1066,6 +1066,12 @@ def test_cli_generate_docs_writes_to_file(tmp_path: Path) -> None:
     assert "| DATABASE_URL |" in content
 
 
+def test_cli_version() -> None:
+    result = runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+    assert "envkeep version:" in result.stdout
+
+
 def test_cli_generate_schema() -> None:
     result = runner.invoke(app, ["generate-schema"])
     assert result.exit_code == 0
