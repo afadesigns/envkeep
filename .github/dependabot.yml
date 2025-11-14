@@ -1,12 +1,19 @@
 version: 2
 updates:
+  # Enable version updates for pip
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
-      interval: "weekly"
-    labels: ["dependencies"]
+      interval: "daily"
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+
+  # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-    labels: ["dependencies"]
+      interval: "daily"
+    groups:
+      github-actions:
+        patterns: ["*"]
