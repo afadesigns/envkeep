@@ -179,6 +179,30 @@ def test_spec_rejects_duplicate_profiles() -> None:
         EnvSpec.from_dict(data)
 
 
+def test_custom_validators() -> None:
+    def _is_valid(value: str) -> None:
+        if value != "valid":
+            raise ValueError("value must be 'valid'")
+
+    spec = EnvSpec.from_dict(
+        {
+            "version": 1,
+            "variables": [
+                {
+                    "name": "CUSTOM",
+                    "validators": [_is_valid],
+                },
+            ],
+        }
+    )
+    valid_snapshot = EnvSnapshot.from_text("CUSTOM=valid")
+    invalid_snapshot = EnvSnapshot.from_text("CUSTOM=invalid")
+    assert spec.validate(valid_snapshot).is_success
+    report = spec.validate(invalid_snapshot)
+    assert not report.is_success
+    assert "custom validation failed" in report.issues[0].message
+
+
 def test_spec_maps_are_read_only() -> None:
     spec = EnvSpec.from_file(EXAMPLE_SPEC)
     variables = dict(spec.variable_map())

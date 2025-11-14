@@ -132,6 +132,12 @@ class VariableSpec:
     max_length: int | None = None
     min_value: int | float | None = None
     max_value: int | float | None = None
+    validators: list[Callable[[Any], None]] = field(default_factory=list)
+
+    @classmethod
+    def from_string(cls, name: str, value: str) -> VariableSpec:
+        """Create a VariableSpec from a string."""
+        return cls(name=name, var_type=VariableType.STRING)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VariableSpec:
@@ -162,6 +168,7 @@ class VariableSpec:
             max_length=data.get("max_length"),
             min_value=data.get("min_value"),
             max_value=data.get("max_value"),
+            validators=data.get("validators", []),
         )
         if default is not None:
             instance.validate(default)
@@ -196,7 +203,13 @@ class VariableSpec:
                     raise ValueError(f"value must be at most {self.max_value}")
 
     def _validate_type(self, value: str) -> str:
-        return self.var_type.normalize(value)
+        normalized = self.var_type.normalize(value)
+        for validator in self.validators:
+            try:
+                validator(normalized)
+            except ValueError as exc:
+                raise ValueError(f"custom validation failed: {exc}") from exc
+        return normalized
 
     def validate(self, value: str) -> str:
         self._validate_not_empty(value)
@@ -263,7 +276,18 @@ class EnvSpec:
         variables_data = data.get("variables", [])
         profiles_data = data.get("profiles", [])
         imports_data = data.get("imports", [])
-        variables = [VariableSpec.from_dict(item) for item in variables_data]
+        env_spec_validators = data.get("validators", [])
+        processed_variables_data = []
+        for item in variables_data:
+            item_validators = item.get("validators", [])
+            merged_validators = list(env_spec_validators) + list(item_validators)
+            if merged_validators:
+                new_item = item.copy()
+                new_item["validators"] = merged_validators
+                processed_variables_data.append(new_item)
+            else:
+                processed_variables_data.append(item)
+        variables = [VariableSpec.from_dict(item) for item in processed_variables_data]
         _assert_unique([var.name for var in variables], entity="variable")
         profiles = [ProfileSpec.from_dict(item) for item in profiles_data]
         _assert_unique([profile.name for profile in profiles], entity="profile")
