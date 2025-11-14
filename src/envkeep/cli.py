@@ -1115,5 +1115,54 @@ def render_diff_report(
     console.print(f"Total differences: {report.change_count}")
 
 
+@app.command()
+def init(
+    env_file: Path = typer.Argument(..., help="Path to the environment file to generate the spec from."),
+    output: OptionalPath = typer.Option(
+        "envkeep.toml",
+        "--output",
+        "-o",
+        help="Where to write the generated file.",
+    ),
+    create_profile: bool = typer.Option(
+        False,
+        "--create-profile",
+        help="Create a profile for the specified env file.",
+    ),
+) -> None:
+    """Generate a new envkeep.toml from an existing .env file."""
+    if not env_file.exists():
+        _usage_error(f"env file '{env_file}' does not exist")
+
+    snapshot = EnvSnapshot.from_env_file(env_file)
+    variables = [
+        {"name": name, "type": "string", "required": True}
+        for name in snapshot.to_dict()
+    ]
+
+    spec = {
+        "version": 1,
+        "variables": variables,
+    }
+
+    if create_profile:
+        spec["profiles"] = [
+            {
+                "name": env_file.name.replace(".", "_"),
+                "env_file": str(env_file),
+            }
+        ]
+
+    import tomli_w
+
+    content = tomli_w.dumps(spec)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote spec to {output}")
+    else:
+        typer.echo(content)
+
+
 if __name__ == "__main__":
     app()

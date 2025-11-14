@@ -1184,3 +1184,32 @@ def test_load_spec_is_cached(tmp_path: Path, monkeypatch):
         cli.load_spec(spec_file)
 
     assert mock_load.call_count == 1
+
+def test_cli_init_generates_spec(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("FOO=bar\nBAZ=qux\n", encoding="utf-8")
+    output_file = tmp_path / "envkeep.toml"
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(env_file),
+            "--output",
+            str(output_file),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Wrote spec to" in result.stdout
+    assert output_file.exists()
+
+    from envkeep._compat import tomllib
+
+    with open(output_file, "rb") as f:
+        spec = tomllib.load(f)
+
+    assert spec["version"] == 1
+    assert len(spec["variables"]) == 2
+    assert spec["variables"][0]["name"] == "FOO"
+    assert spec["variables"][1]["name"] == "BAZ"
