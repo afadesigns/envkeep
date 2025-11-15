@@ -61,6 +61,40 @@ Pipe specs directly from tooling with `--spec -` (for example, `cat envkeep.toml
 
 See [`examples/basic`](examples/basic) for a complete spec and environment pair and [`examples/socialsense`](examples/socialsense) for a multi-profile demo with bundled `.env` fixtures.
 
+## Additional Commands
+
+### `init`
+
+The `init` command creates a new `envkeep.toml` spec from an existing `.env` file.
+
+```bash
+envkeep init .env
+```
+
+### `generate-docs`
+
+The `generate-docs` command generates Markdown documentation for the environment variables in your spec.
+
+```bash
+envkeep generate-docs --output DOCS.md
+```
+
+### `generate-schema`
+
+The `generate-schema` command generates a JSON schema for the `envkeep.toml` file. This is useful for editor integration and validation.
+
+```bash
+envkeep generate-schema --output envkeep.schema.json
+```
+
+### `config`
+
+The `config` command prints the current configuration that `envkeep` is using.
+
+```bash
+envkeep config
+```
+
 ## Configuration
 
 `envkeep` can be configured via a `[tool.envkeep]` section in your `pyproject.toml` file. This is useful for setting project-wide defaults.
@@ -133,6 +167,43 @@ type = "int"
 min_value = 1024
 max_value = 65535
 ```
+
+## Custom Validators
+
+`envkeep` allows you to create your own custom validators for more complex validation scenarios. Custom validators are Python functions that are registered as plugins and can be referenced in your `envkeep.toml` file.
+
+**1. Create a validator function:**
+
+A validator function takes a single argument (the value of the environment variable) and should raise a `ValueError` if the value is invalid.
+
+```python
+# my_validators.py
+def is_even(value: str) -> None:
+    if int(value) % 2 != 0:
+        raise ValueError("value must be an even number")
+```
+
+**2. Register the validator as a plugin:**
+
+In your `pyproject.toml`, add an entry point for your validator in the `[project.entry-points."envkeep.validators"]` section.
+
+```toml
+[project.entry-points."envkeep.validators"]
+is_even = "my_validators:is_even"
+```
+
+**3. Use the validator in your `envkeep.toml`:**
+
+You can now use the `is_even` validator in your `envkeep.toml` file.
+
+```toml
+[[variables]]
+name = "EVEN_NUMBER"
+type = "int"
+validators = ["is_even"]
+```
+
+When you run `envkeep check`, it will automatically discover and invoke your custom validator.
 
 ## Shell Completion
 

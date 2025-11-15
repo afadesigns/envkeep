@@ -31,17 +31,38 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
       - name: Install dependencies
-        run: pip install --upgrade build
+        run: uv sync --extra release --python 3.12
 
       - name: Build package
-        run: python -m build
+        run: uv build --sdist --wheel --outdir dist
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v2
+        with:
+          cosign-release: v2.2.3
+
+      - name: Sign artifacts
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          for file in dist/*.{whl,gz}; do
+            cosign sign-blob --yes "$file" --output-signature "$file.sig"
+          done
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.9.0
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Generate SLSA provenance
+        uses: slsa-framework/slsa-github-generator@v1
+        with:
+          attestation_subject_path: "dist/*.whl"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2.0.6
@@ -50,5 +71,6 @@ jobs:
           files: |
             dist/*.whl
             dist/*.tar.gz
+            dist/*.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

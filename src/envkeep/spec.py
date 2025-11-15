@@ -315,10 +315,35 @@ class EnvSpec:
     @classmethod
     def from_snapshot(cls, snapshot: EnvSnapshot, *, description: str) -> EnvSpec:
         """Create a spec from a snapshot, inferring variable types."""
-        variables = [
-            VariableSpec(name=name, var_type=VariableType.STRING)
-            for name in sorted(snapshot.keys())
-        ]
+        variables = []
+        for name, value in sorted(snapshot.items()):
+            var_type = VariableType.STRING
+            try:
+                VariableType.INT.normalize(value)
+                var_type = VariableType.INT
+            except ValueError:
+                try:
+                    VariableType.FLOAT.normalize(value)
+                    var_type = VariableType.FLOAT
+                except ValueError:
+                    try:
+                        VariableType.BOOL.normalize(value)
+                        var_type = VariableType.BOOL
+                    except ValueError:
+                        try:
+                            VariableType.URL.normalize(value)
+                            var_type = VariableType.URL
+                        except ValueError:
+                            try:
+                                VariableType.PATH.normalize(value)
+                                var_type = VariableType.PATH
+                            except ValueError:
+                                try:
+                                    VariableType.JSON.normalize(value)
+                                    var_type = VariableType.JSON
+                                except ValueError:
+                                    pass
+            variables.append(VariableSpec(name=name, var_type=var_type))
         metadata = {
             "description": description,
             "generated_from": snapshot.source,
@@ -404,6 +429,17 @@ class EnvSpec:
                 ),
             )
 
+    def _handle_backend_failure(self, backend_name: str, message: str, report: ValidationReport) -> None:
+        """Handle a failure from a backend plugin."""
+        report.add(
+            ValidationIssue(
+                variable=backend_name,
+                message=message,
+                severity=IssueSeverity.ERROR,
+                code="backend_error",
+                hint="Check the plugin configuration and network connectivity.",
+            ),
+        )
     def validate(self, snapshot: EnvSnapshot, *, allow_extra: bool = False) -> ValidationReport:
         report = ValidationReport()
         self._validate_variables(snapshot, report)
@@ -575,6 +611,30 @@ class EnvSpec:
         self._profile_cache = MappingProxyType({profile.name: profile for profile in self.profiles})
         self._variable_names = tuple(variable.name for variable in self.variables)
         self._profile_names = tuple(profile.name for profile in self.profiles)
+
+    def load_imports(self, base_dir: Path) -> None:
+        """Load and merge imported specs."""
+        if not self.imports:
+            return
+
+        for import_path_str in self.imports:
+            import_path = base_dir / import_path_str
+            imported_spec = EnvSpec.from_file(import_path)
+            imported_spec.load_imports(import_path.parent)
+            self._merge_spec(imported_spec)
+
+        self._rebuild_caches()
+
+    def _merge_spec(self, other: EnvSpec) -> None:
+        """Merge another spec into this one."""
+        existing_vars = {var.name for var in self.variables}
+        self.variables.extend(
+            var for var in other.variables if var.name not in existing_vars
+        )
+        existing_profiles = {prof.name for prof in self.profiles}
+        self.profiles.extend(
+            prof for prof in other.profiles if prof.name not in existing_profiles
+        )
 
     def variable_names(self) -> tuple[str, ...]:
         return self._variable_names

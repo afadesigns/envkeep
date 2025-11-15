@@ -115,10 +115,12 @@ def main(
     ),
 ) -> None:
     """Callback to configure the main application context."""
-    pass
-
-
-def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
+def _fetch_remote_values(
+    spec: EnvSpec,
+    report: ValidationReport,
+    *,
+    strict_plugins: bool,
+) -> dict[str, str]:
     """Fetch values from all remote backends defined in the spec."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -148,7 +150,14 @@ def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
             try:
                 results = future.result()
                 fetched_values.update(results)
-            except Exception:
+            except Exception as exc:
+                if strict_plugins:
+                    raise
+                spec._handle_backend_failure(  # type: ignore
+                    backend_name,
+                    str(exc),
+                    report,
+                )
                 logger.exception("Plugin %s failed to fetch secrets", backend_name)
 
     return fetched_values
@@ -395,16 +404,6 @@ def _load_spec_from_path(path: Path, stdin_data: str | None) -> EnvSpec:
         raise typer.BadParameter(f"failed to load spec: {exc}") from exc
 
 
-def _merge_specs(base_spec: EnvSpec, imported_spec: EnvSpec) -> None:
-    """Merge an imported spec into a base spec."""
-    existing_vars = {var.name for var in base_spec.variables}
-    base_spec.variables.extend(
-        var for var in imported_spec.variables if var.name not in existing_vars
-    )
-    existing_profiles = {prof.name for prof in base_spec.profiles}
-    base_spec.profiles.extend(
-        prof for prof in imported_spec.profiles if prof.name not in existing_profiles
-    )
 
 
 def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
@@ -417,17 +416,9 @@ def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
         if path is None:
             raise typer.BadParameter("spec file not found (envkeep.toml)")
 
-    base_spec = _load_spec_from_path(path, stdin_data)
-    if not base_spec.imports:
-        return base_spec
-
-    base_dir = path.parent
-    for import_path_str in base_spec.imports:
-        import_path = base_dir / import_path_str
-        imported_spec = load_spec(import_path)
-        _merge_specs(base_spec, imported_spec)
-
-    return base_spec
+    spec = _load_spec_from_path(path, stdin_data)
+    spec.load_imports(path.parent)
+    return spec
 
 
 def _aggregate_doctor_results(
@@ -571,6 +562,11 @@ def check(
         "--no-cache",
         help="Disable caching of validation reports.",
     ),
+    strict_plugins: bool = typer.Option(
+        False,
+        "--strict-plugins",
+        help="Treat plugin failures as errors.",
+    ),
 ) -> None:
     """Validate an environment against the specification."""
 
@@ -585,28 +581,32 @@ def check(
 
     cache = Cache() if not no_cache else None
 
-    report = cache.get_report(env_file, spec_path) if cache and spec_path else None
-    if report is None:
-        # Fetch remote values from plugins
-        remote_values = _fetch_remote_values(env_spec)
-
-        if env_path == "-":
-            data = sys.stdin.read()
-            snapshot = EnvSnapshot.from_text(data, source="stdin")
-        else:
-            snapshot = EnvSnapshot.from_env_file(env_file)
-
-        # Merge local and remote values, with remote taking precedence
-        combined_values = snapshot.to_dict()
-        combined_values.update(remote_values)
-
-        # Create a new snapshot from the combined values for validation
-        combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
-
-        report = env_spec.validate(combined_snapshot, allow_extra=allow_extra)
-        if cache and spec_path:
-            cache.set_report(env_file, spec_path, report)
-
+            report = cache.get_report(env_file, spec_path) if cache and spec_path else None
+            if report is None:
+                report = ValidationReport()
+                # Fetch remote values from plugins
+                remote_values = _fetch_remote_values(
+                    env_spec,
+                    report,
+                    strict_plugins=strict_plugins,
+                )
+    
+                if env_path == "-":
+                    data = sys.stdin.read()
+                    snapshot = EnvSnapshot.from_text(data, source="stdin")
+                else:
+                    snapshot = EnvSnapshot.from_env_file(env_file)
+    
+                # Merge local and remote values, with remote taking precedence
+                combined_values = snapshot.to_dict()
+                combined_values.update(remote_values)
+    
+                # Create a new snapshot from the combined values for validation
+                combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
+    
+                report.extend(env_spec.validate(combined_snapshot, allow_extra=allow_extra).issues)
+                if cache and spec_path:
+                    cache.set_report(env_file, spec_path, report)
     fmt = _coerce_output_format(output_format)
     exit_code = _handle_validation_output(
         report,
@@ -954,6 +954,16 @@ def doctor(
         "--no-cache",
         help="Disable caching of validation reports.",
     ),
+    strict_plugins: bool = typer.Option(
+        False,
+        "--strict-plugins",
+        help="Treat plugin failures as errors.",
+    ),
+    max_workers: int = typer.Option(
+        None,
+        "--max-workers",
+        help="Maximum number of worker threads.",
+    ),
 ) -> None:
     """Validate one or more profiles declared in the spec."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1005,7 +1015,7 @@ def doctor(
         top_limit = normalized_limit(summary_top) or 0
         resolved_profile_records: list[tuple[str, str, Path, bool]] = []
 
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_profile = {
                 executor.submit(
                     _validate_profile,
@@ -1015,6 +1025,7 @@ def doctor(
                     cache,
                     allow_extra,
                     top_limit,
+                    strict_plugins,
                 ): entry
                 for entry in selected_profiles
             }
@@ -1105,6 +1116,7 @@ def _validate_profile(
     cache: Cache | None,
     allow_extra: bool,
     top_limit: int,
+    strict_plugins: bool,
 ) -> tuple[ValidationReport, bool]:
     env_path = entry["path"]
     exists = env_path.exists()
@@ -1113,9 +1125,18 @@ def _validate_profile(
 
     report = cache.get_report(env_path, spec_path) if cache else None
     if report is None:
-        snapshot = EnvSnapshot.from_env_file(env_path)
+        report = ValidationReport()
         env_spec = load_spec(spec_path, stdin_data=stdin_spec)
-        report = env_spec.validate(snapshot, allow_extra=allow_extra)
+        remote_values = _fetch_remote_values(
+            env_spec,
+            report,
+            strict_plugins=strict_plugins,
+        )
+        snapshot = EnvSnapshot.from_env_file(env_path)
+        combined_values = snapshot.to_dict()
+        combined_values.update(remote_values)
+        combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_path))
+        report.extend(env_spec.validate(combined_snapshot, allow_extra=allow_extra).issues)
         if cache:
             cache.set_report(env_path, spec_path, report)
     return report, True
