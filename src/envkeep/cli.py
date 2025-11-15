@@ -115,6 +115,9 @@ def main(
     ),
 ) -> None:
     """Callback to configure the main application context."""
+    pass
+
+
 def _fetch_remote_values(
     spec: EnvSpec,
     report: ValidationReport,
@@ -404,8 +407,6 @@ def _load_spec_from_path(path: Path, stdin_data: str | None) -> EnvSpec:
         raise typer.BadParameter(f"failed to load spec: {exc}") from exc
 
 
-
-
 def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
     if path is None:
         config = load_config()
@@ -537,6 +538,7 @@ def _render_doctor_text_summary(
             status = "" if exists else " (missing)"
             console.print(f"  • {name}: {env_file_raw} -> {resolved_path}{status}")
 
+
 @app.command()
 def check(
     env_file: Path = ENV_FILE_ARGUMENT,
@@ -562,6 +564,11 @@ def check(
         "--no-cache",
         help="Disable caching of validation reports.",
     ),
+    ttl: int = typer.Option(
+        0,
+        "--ttl",
+        help="Time to live for cache in seconds.",
+    ),
     strict_plugins: bool = typer.Option(
         False,
         "--strict-plugins",
@@ -579,34 +586,34 @@ def check(
         _usage_error("cannot read both spec and environment from stdin")
     env_spec = load_spec(spec_path, stdin_data=stdin_spec)
 
-    cache = Cache() if not no_cache else None
+    cache = Cache(ttl=ttl) if not no_cache else None
 
-            report = cache.get_report(env_file, spec_path) if cache and spec_path else None
-            if report is None:
-                report = ValidationReport()
-                # Fetch remote values from plugins
-                remote_values = _fetch_remote_values(
-                    env_spec,
-                    report,
-                    strict_plugins=strict_plugins,
-                )
-    
-                if env_path == "-":
-                    data = sys.stdin.read()
-                    snapshot = EnvSnapshot.from_text(data, source="stdin")
-                else:
-                    snapshot = EnvSnapshot.from_env_file(env_file)
-    
-                # Merge local and remote values, with remote taking precedence
-                combined_values = snapshot.to_dict()
-                combined_values.update(remote_values)
-    
-                # Create a new snapshot from the combined values for validation
-                combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
-    
-                report.extend(env_spec.validate(combined_snapshot, allow_extra=allow_extra).issues)
-                if cache and spec_path:
-                    cache.set_report(env_file, spec_path, report)
+    report = cache.get_report(env_file, spec_path) if cache and spec_path else None
+    if report is None:
+        report = ValidationReport()
+        # Fetch remote values from plugins
+        remote_values = _fetch_remote_values(
+            env_spec,
+            report,
+            strict_plugins=strict_plugins,
+        )
+
+        if env_path == "-":
+            data = sys.stdin.read()
+            snapshot = EnvSnapshot.from_text(data, source="stdin")
+        else:
+            snapshot = EnvSnapshot.from_env_file(env_file)
+
+        # Merge local and remote values, with remote taking precedence
+        combined_values = snapshot.to_dict()
+        combined_values.update(remote_values)
+
+        # Create a new snapshot from the combined values for validation
+        combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
+
+        report.extend(env_spec.validate(combined_snapshot, allow_extra=allow_extra).issues)
+        if cache and spec_path:
+            cache.set_report(env_file, spec_path, report)
     fmt = _coerce_output_format(output_format)
     exit_code = _handle_validation_output(
         report,
@@ -715,7 +722,7 @@ def _generate_docs_content(env_spec: EnvSpec) -> str:
     ]
     for var in env_spec.variables:
         lines.append(
-            f"| {var.name} | {var.var_type.value} | {'Yes' if var.required else 'No'} | {var.description or ''} | {var.default or ''} |"
+            f"| {var.name} | {var.var_type.value} | {{'Yes' if var.required else 'No'}} | {var.description or ''} | {var.default or ''} |",
         )
     return "\n".join(lines)
 
@@ -954,6 +961,11 @@ def doctor(
         "--no-cache",
         help="Disable caching of validation reports.",
     ),
+    ttl: int = typer.Option(
+        0,
+        "--ttl",
+        help="Time to live for cache in seconds.",
+    ),
     strict_plugins: bool = typer.Option(
         False,
         "--strict-plugins",
@@ -988,7 +1000,7 @@ def doctor(
         typer.echo("No profiles declared in spec.")
         raise typer.Exit(code=0)
     else:
-        cache = Cache() if not no_cache else None
+        cache = Cache(ttl=ttl) if not no_cache else None
 
         def _selected_entry(item: ProfileSpec) -> dict[str, Any]:
             resolved = _resolve_profile_path(item.env_file, base_dir=profile_base_dir)
@@ -1015,7 +1027,8 @@ def doctor(
         top_limit = normalized_limit(summary_top) or 0
         resolved_profile_records: list[tuple[str, str, Path, bool]] = []
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        max_workers_val = max_workers if max_workers is not None else None
+        with ThreadPoolExecutor(max_workers=max_workers_val) as executor:
             future_to_profile = {
                 executor.submit(
                     _validate_profile,
@@ -1140,116 +1153,3 @@ def _validate_profile(
         if cache:
             cache.set_report(env_path, spec_path, report)
     return report, True
-
-def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
-    """Fetch values from all remote backends defined in the spec."""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    backends = load_backends()
-    if not backends:
-        return {}
-
-    sources_by_backend: dict[str, dict[str, str]] = defaultdict(dict)
-    for var in spec.variables:
-        if var.source:
-            try:
-                backend_name, source_uri = var.source.split(":", 1)
-                if backend_name in backends:
-                    sources_by_backend[backend_name][var.name] = source_uri
-            except ValueError:
-                # Ignore malformed source strings
-                pass
-
-    fetched_values: dict[str, str] = {}
-    with ThreadPoolExecutor() as executor:
-        future_to_backend = {
-            executor.submit(backends[backend_name].fetch, sources): backend_name
-            for backend_name, sources in sources_by_backend.items()
-        }
-        for future in as_completed(future_to_backend):
-            backend_name = future_to_backend[future]
-            try:
-                results = future.result()
-                fetched_values.update(results)
-            except Exception:
-                logger.exception("Plugin %s failed to fetch secrets", backend_name)
-
-    return fetched_values
-
-
-class OutputFormat(str, Enum):
-    TEXT = "text"
-    JSON = "json"
-
-
-def _parse_output_format(value: OutputFormat | str) -> OutputFormat:
-    if isinstance(value, OutputFormat):
-        return value
-    try:
-        return OutputFormat(str(value).lower())
-    except ValueError as exc:
-        allowed = ", ".join(fmt.value for fmt in OutputFormat)
-        raise typer.BadParameter(
-            f"Invalid value for '--format': output format must be one of: {allowed}",
-        ) from exc
-
-
-def _option_with_value(*args: Any, **kwargs: Any) -> typer.models.OptionInfo:
-    option = cast(typer.models.OptionInfo, typer.Option(*args, **kwargs))
-    if option.param_decls:
-        option.param_decls = tuple(decl for decl in option.param_decls if isinstance(decl, str))
-    else:
-        option.param_decls = ()
-    if _CLICK_UNSET is not None and hasattr(option, "flag_value"):
-        option.flag_value = _CLICK_UNSET  # Click <8.1 treats flag_value=None as a boolean flag
-    return option
-
-
-def _coerce_output_format(raw: str) -> OutputFormat:
-    try:
-        return _parse_output_format(raw)
-    except typer.BadParameter as exc:
-        typer.echo(str(exc))
-        raise typer.Exit(code=2) from exc
-
-
-SPEC_OPTION = _option_with_value(
-    None,
-    "--spec",
-    "-s",
-    help="Path to envkeep spec (searches parents if not specified).",
-)
-FORMAT_OPTION = _option_with_value(
-    DEFAULT_OUTPUT_FORMAT,
-    "--format",
-    "-f",
-    help="Output format: text or json.",
-)
-FORMAT_OPTION.case_sensitive = False
-PROFILE_OPTION = _option_with_value(
-    DEFAULT_PROFILE,
-    "--profile",
-    "-p",
-    help="Profile to validate (all to run every profile).",
-)
-PROFILE_OPTION.show_default = True
-PROFILE_BASE_OPTION = _option_with_value(
-    None,
-    "--profile-base",
-    help="Override the base directory used to resolve relative profile env_file paths.",
-)
-GENERATE_OUTPUT_OPTION = _option_with_value(
-    None,
-    "--output",
-    "-o",
-    help="Where to write the generated file.",
-)
-ENV_FILE_ARGUMENT = typer.Argument(..., help="Path to the environment file.")
-DIFF_FIRST_ARGUMENT = typer.Argument(..., help="Baseline environment file.")
-DIFF_SECOND_ARGUMENT = typer.Argument(..., help="Target environment file.")
-
-SPEC_OPTION_DEFAULT = cast(OptionalPath, SPEC_OPTION)
-FORMAT_OPTION_DEFAULT = cast(str, FORMAT_OPTION)
-PROFILE_OPTION_DEFAULT = cast(str, PROFILE_OPTION)
-PROFILE_BASE_OPTION_DEFAULT = cast(OptionalPath, PROFILE_BASE_OPTION)
-GENERATE_OUTPUT_OPTION_DEFAULT = cast(OptionalPath, GENERATE_OUTPUT_OPTION)
