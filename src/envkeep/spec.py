@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any, cast
 from urllib.parse import urlparse
 
+from . import plugins
 from ._compat import tomllib
 from .report import (
     DiffEntry,
@@ -132,6 +133,12 @@ class VariableSpec:
     max_length: int | None = None
     min_value: int | float | None = None
     max_value: int | float | None = None
+    validators: list[Callable[[Any], None]] = field(default_factory=list)
+
+    @classmethod
+    def from_string(cls, name: str, value: str) -> VariableSpec:
+        """Create a VariableSpec from a string."""
+        return cls(name=name, var_type=VariableType.STRING)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VariableSpec:
@@ -146,6 +153,17 @@ class VariableSpec:
         example = data.get("example")
         if example is not None:
             example = str(example)
+        
+        validators = []
+        for validator in data.get("validators", []):
+            if isinstance(validator, str):
+                loaded = plugins.load_validator(validator)
+                if loaded is None:
+                    raise ValueError(f"unknown validator: {validator}")
+                validators.append(loaded)
+            else:
+                validators.append(validator)
+
         instance = cls(
             name=name,
             var_type=var_type,
@@ -162,6 +180,7 @@ class VariableSpec:
             max_length=data.get("max_length"),
             min_value=data.get("min_value"),
             max_value=data.get("max_value"),
+            validators=validators,
         )
         if default is not None:
             instance.validate(default)
@@ -196,7 +215,13 @@ class VariableSpec:
                     raise ValueError(f"value must be at most {self.max_value}")
 
     def _validate_type(self, value: str) -> str:
-        return self.var_type.normalize(value)
+        normalized = self.var_type.normalize(value)
+        for validator in self.validators:
+            try:
+                validator(normalized)
+            except ValueError as exc:
+                raise ValueError(f"custom validation failed: {exc}") from exc
+        return normalized
 
     def validate(self, value: str) -> str:
         self._validate_not_empty(value)
@@ -242,6 +267,7 @@ class EnvSpec:
     profiles: list[ProfileSpec] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     imports: list[str] = field(default_factory=list)
+    tool_config: dict[str, Any] = field(default_factory=dict)
     _variable_cache: Mapping[str, VariableSpec] = field(init=False, repr=False)
     _profile_cache: Mapping[str, ProfileSpec] = field(init=False, repr=False)
     _variable_names: tuple[str, ...] = field(init=False, repr=False)
@@ -263,7 +289,19 @@ class EnvSpec:
         variables_data = data.get("variables", [])
         profiles_data = data.get("profiles", [])
         imports_data = data.get("imports", [])
-        variables = [VariableSpec.from_dict(item) for item in variables_data]
+        tool_config = data.get("tool", {})
+        env_spec_validators = data.get("validators", [])
+        processed_variables_data = []
+        for item in variables_data:
+            item_validators = item.get("validators", [])
+            merged_validators = list(env_spec_validators) + list(item_validators)
+            if merged_validators:
+                new_item = item.copy()
+                new_item["validators"] = merged_validators
+                processed_variables_data.append(new_item)
+            else:
+                processed_variables_data.append(item)
+        variables = [VariableSpec.from_dict(item) for item in processed_variables_data]
         _assert_unique([var.name for var in variables], entity="variable")
         profiles = [ProfileSpec.from_dict(item) for item in profiles_data]
         _assert_unique([profile.name for profile in profiles], entity="profile")
@@ -274,7 +312,46 @@ class EnvSpec:
             profiles=profiles,
             metadata=dict(metadata),
             imports=imports,
+            tool_config=dict(tool_config),
         )
+
+    @classmethod
+    def from_snapshot(cls, snapshot: EnvSnapshot, *, description: str) -> EnvSpec:
+        """Create a spec from a snapshot, inferring variable types."""
+        variables = []
+        for name, value in sorted(snapshot.items()):
+            var_type = VariableType.STRING
+            try:
+                VariableType.INT.normalize(value)
+                var_type = VariableType.INT
+            except ValueError:
+                try:
+                    VariableType.FLOAT.normalize(value)
+                    var_type = VariableType.FLOAT
+                except ValueError:
+                    try:
+                        VariableType.BOOL.normalize(value)
+                        var_type = VariableType.BOOL
+                    except ValueError:
+                        try:
+                            VariableType.URL.normalize(value)
+                            var_type = VariableType.URL
+                        except ValueError:
+                            try:
+                                VariableType.PATH.normalize(value)
+                                var_type = VariableType.PATH
+                            except ValueError:
+                                try:
+                                    VariableType.JSON.normalize(value)
+                                    var_type = VariableType.JSON
+                                except ValueError:
+                                    pass
+            variables.append(VariableSpec(name=name, var_type=var_type))
+        metadata = {
+            "description": description,
+            "generated_from": snapshot.source,
+        }
+        return cls(version=1, variables=variables, metadata=metadata)
 
     def variable_map(self) -> Mapping[str, VariableSpec]:
         return self._variable_cache
@@ -355,6 +432,17 @@ class EnvSpec:
                 ),
             )
 
+    def _handle_backend_failure(self, backend_name: str, message: str, report: ValidationReport) -> None:
+        """Handle a failure from a backend plugin."""
+        report.add(
+            ValidationIssue(
+                variable=backend_name,
+                message=message,
+                severity=IssueSeverity.ERROR,
+                code="backend_error",
+                hint="Check the plugin configuration and network connectivity.",
+            ),
+        )
     def validate(self, snapshot: EnvSnapshot, *, allow_extra: bool = False) -> ValidationReport:
         report = ValidationReport()
         self._validate_variables(snapshot, report)
@@ -526,6 +614,30 @@ class EnvSpec:
         self._profile_cache = MappingProxyType({profile.name: profile for profile in self.profiles})
         self._variable_names = tuple(variable.name for variable in self.variables)
         self._profile_names = tuple(profile.name for profile in self.profiles)
+
+    def load_imports(self, base_dir: Path) -> None:
+        """Load and merge imported specs."""
+        if not self.imports:
+            return
+
+        for import_path_str in self.imports:
+            import_path = base_dir / import_path_str
+            imported_spec = EnvSpec.from_file(import_path)
+            imported_spec.load_imports(import_path.parent)
+            self._merge_spec(imported_spec)
+
+        self._rebuild_caches()
+
+    def _merge_spec(self, other: EnvSpec) -> None:
+        """Merge another spec into this one."""
+        existing_vars = {var.name for var in self.variables}
+        self.variables.extend(
+            var for var in other.variables if var.name not in existing_vars
+        )
+        existing_profiles = {prof.name for prof in self.profiles}
+        self.profiles.extend(
+            prof for prof in other.profiles if prof.name not in existing_profiles
+        )
 
     def variable_names(self) -> tuple[str, ...]:
         return self._variable_names

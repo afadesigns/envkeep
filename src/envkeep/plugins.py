@@ -30,12 +30,17 @@ class Backend(Protocol):
         ...  # pragma: no cover
 
 
-def load_backends() -> dict[str, Backend]:
+def load_backends(config: dict | None = None) -> dict[str, Backend]:
     """Discover and load all installed backend plugins."""
     backends: dict[str, Backend] = {}
     for entry_point in entry_points(group="envkeep.backends"):
         try:
-            backend_instance = entry_point.load()()
+            backend_class = entry_point.load()
+            if config and entry_point.name in config:
+                backend_instance = backend_class(config[entry_point.name])
+            else:
+                backend_instance = backend_class()
+            
             if isinstance(backend_instance, Backend) and callable(
                 getattr(backend_instance, "fetch", None),
             ):
@@ -43,3 +48,14 @@ def load_backends() -> dict[str, Backend]:
         except Exception:
             logger.exception("Failed to load plugin: %s", entry_point.name)
     return backends
+
+
+def load_validator(name: str) -> callable | None:
+    """Discover and load a custom validator function."""
+    for entry_point in entry_points(group="envkeep.validators"):
+        if entry_point.name == name:
+            try:
+                return entry_point.load()
+            except Exception:
+                logger.exception("Failed to load validator: %s", entry_point.name)
+    return None

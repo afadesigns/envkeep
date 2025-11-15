@@ -1,5 +1,5 @@
-from __future__ import annotations
-
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -179,6 +179,30 @@ def test_spec_rejects_duplicate_profiles() -> None:
         EnvSpec.from_dict(data)
 
 
+def test_custom_validators() -> None:
+    def _is_valid(value: str) -> None:
+        if value != "valid":
+            raise ValueError("value must be 'valid'")
+
+    spec = EnvSpec.from_dict(
+        {
+            "version": 1,
+            "variables": [
+                {
+                    "name": "CUSTOM",
+                    "validators": [_is_valid],
+                },
+            ],
+        }
+    )
+    valid_snapshot = EnvSnapshot.from_text("CUSTOM=valid")
+    invalid_snapshot = EnvSnapshot.from_text("CUSTOM=invalid")
+    assert spec.validate(valid_snapshot).is_success
+    report = spec.validate(invalid_snapshot)
+    assert not report.is_success
+    assert "custom validation failed" in report.issues[0].message
+
+
 def test_spec_maps_are_read_only() -> None:
     spec = EnvSpec.from_file(EXAMPLE_SPEC)
     variables = dict(spec.variable_map())
@@ -189,3 +213,118 @@ def test_spec_maps_are_read_only() -> None:
     profiles["staging"] = spec.profiles[0]
     assert "NEW" in variables
     assert "staging" in profiles
+
+
+def test_load_validators_from_strings(tmp_path: Path) -> None:
+    (tmp_path / "setup.py").write_text(
+        """
+        from setuptools import setup
+
+        setup(
+            name="my_validators",
+            py_modules=["my_validators"],
+            entry_points={
+                "envkeep.validators": [
+                    "is_valid = my_validators:is_valid",
+                ],
+            },
+        )
+        """
+    )
+    (tmp_path / "my_validators.py").write_text(
+        """
+        def is_valid(value: str) -> None:
+            if value != "valid":
+                raise ValueError("value must be 'valid'")
+        """
+    )
+    subprocess.run([sys.executable, "-m", "uv", "pip", "install", str(tmp_path)], check=True)
+    sys.path.insert(0, str(tmp_path))
+    from importlib.metadata import entry_points
+    print(list(entry_points(group="envkeep.validators")))
+    spec = EnvSpec.from_dict(
+        {
+            "version": 1,
+            "variables": [
+                {
+                    "name": "CUSTOM",
+                    "validators": ["is_valid"],
+                },
+            ],
+        }
+    )
+    invalid_snapshot = EnvSnapshot.from_text("CUSTOM=invalid")
+    report = spec.validate(invalid_snapshot)
+    assert not report.is_success
+    assert "custom validation failed" in report.issues[0].message
+
+
+def test_load_validators_from_strings_unknown() -> None:
+    with pytest.raises(ValueError, match="unknown validator: unknown"):
+        EnvSpec.from_dict(
+            {
+                "version": 1,
+                "variables": [
+                    {
+                        "name": "CUSTOM",
+                        "validators": ["unknown"],
+                    },
+                ],
+            }
+        )
+
+
+def test_load_validators_from_strings(tmp_path: Path) -> None:
+    (tmp_path / "setup.py").write_text(
+        """
+from setuptools import setup
+
+setup(
+    name="my_validators",
+    py_modules=["my_validators"],
+    entry_points={
+        "envkeep.validators": [
+            "is_valid = my_validators:is_valid",
+        ],
+    },
+)
+        """
+    )
+    (tmp_path / "my_validators.py").write_text(
+        """
+def is_valid(value: str) -> None:
+    if value != "valid":
+        raise ValueError("value must be 'valid'")
+        """
+    )
+    subprocess.run(["/home/rtx/.local/bin/uv", "pip", "install", str(tmp_path)], check=True)
+    sys.path.insert(0, str(tmp_path))
+    spec = EnvSpec.from_dict(
+        {
+            "version": 1,
+            "variables": [
+                {
+                    "name": "CUSTOM",
+                    "validators": ["is_valid"],
+                },
+            ],
+        }
+    )
+    invalid_snapshot = EnvSnapshot.from_text("CUSTOM=invalid")
+    report = spec.validate(invalid_snapshot)
+    assert not report.is_success
+    assert "custom validation failed" in report.issues[0].message
+
+def test_load_validators_from_strings_unknown() -> None:
+    with pytest.raises(ValueError, match="unknown validator: unknown"):
+        EnvSpec.from_dict(
+            {
+                "version": 1,
+                "variables": [
+                    {
+                        "name": "CUSTOM",
+                        "validators": ["unknown"],
+                    },
+                ],
+            }
+        )

@@ -108,7 +108,7 @@ class EnvSnapshot:
         return key in self.values
 
 
-def _parse_line(line: str) -> tuple[str, str] | None:
+def _parse_line(line: str, env: dict[str, str]) -> tuple[str, str] | None:
     """Parse a single line of an env file."""
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
@@ -121,7 +121,7 @@ def _parse_line(line: str) -> tuple[str, str] | None:
     processed = _sanitize_value(value)
     if processed is None:
         return None
-    return key, _unescape(processed)
+    return key, _expand_variables(_unescape(processed), env)
 
 
 def _parse_env(raw: str) -> tuple[dict[str, str], tuple[str, ...], tuple[tuple[int, str], ...]]:
@@ -129,17 +129,48 @@ def _parse_env(raw: str) -> tuple[dict[str, str], tuple[str, ...], tuple[tuple[i
     result: dict[str, str] = {}
     duplicates: list[str] = []
     invalid: list[tuple[int, str]] = []
-    for index, line in enumerate(raw.splitlines(), start=1):
-        parsed = _parse_line(line)
+    lines = raw.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        line_number = i + 1
+
+        # Handle multiline variables
+        if line.strip().endswith("\\"):
+            multiline_content = [line.strip()[:-1]]
+            i += 1
+            while i < len(lines) and lines[i].strip().endswith("\\"):
+                multiline_content.append(lines[i].strip()[:-1])
+                i += 1
+            if i < len(lines):
+                multiline_content.append(lines[i].strip())
+
+            line = "".join(multiline_content)
+
+        parsed = _parse_line(line, result)
         if parsed is None:
             if line.strip() and not line.strip().startswith("#"):
-                invalid.append((index, line.rstrip("\n")))
-            continue
-        key, value = parsed
-        if key in result:
-            duplicates.append(key)
-        result[key] = value
+                invalid.append((line_number, line.rstrip("\n")))
+        else:
+            key, value = parsed
+            if key in result:
+                duplicates.append(key)
+            result[key] = value
+        i += 1
     return result, tuple(duplicates), tuple(invalid)
+_VARIABLE_RE = re.compile(
+    r"\$(?P<key>[A-Za-z0-9_]+)|\$\{(?P<key2>[A-Za-z0-9_]+)\}",
+)
+
+
+def _expand_variables(value: str, env: dict[str, str]) -> str:
+    """Expand variables in a string."""
+
+    def replacer(match: re.Match[str]) -> str:
+        key = match.group("key") or match.group("key2")
+        return env.get(key, "")
+
+    return _VARIABLE_RE.sub(replacer, value)
 
 
 def _sanitize_value(value: str) -> str | None:

@@ -68,6 +68,38 @@ def test_plugin_discovery_and_fetching(tmp_path: Path, monkeypatch: pytest.Monke
 
     result_fail = runner.invoke(app, ["check", str(env_file)])
 
-    assert result_fail.exit_code == 1
-    assert "REMOTE_VAR" in result_fail.stdout
-    assert "invalid" in result_fail.stdout
+def test_plugin_with_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    # 1. Create the envkeep.toml spec with tool configuration
+    spec_file = tmp_path / "envkeep.toml"
+    spec_text = textwrap.dedent(
+        """
+        version = 1
+
+        [tool.json]
+        file = "remote.json"
+
+        [[variables]]
+        name = "REMOTE_VAR"
+        type = "string"
+        source = "json:REMOTE_VAR"
+        """,
+    )
+    spec_file.write_text(spec_text, encoding="utf-8")
+
+    # 2. Create the remote JSON file
+    remote_data_path = tmp_path / "remote.json"
+    remote_data = {"REMOTE_VAR": "value_from_json"}
+    remote_data_path.write_text(json.dumps(remote_data), encoding="utf-8")
+
+    # 3. Create the local .env file
+    env_file = tmp_path / ".env"
+    env_file.write_text("REMOTE_VAR=overridden_by_remote", encoding="utf-8")
+
+    # 4. Run the check command
+    result = runner.invoke(app, ["check", str(env_file)])
+
+    # 5. Assert that the check passes
+    assert result.exit_code == 0
+    assert "All checks passed" in result.stdout

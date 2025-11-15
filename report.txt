@@ -1,0 +1,1 @@
+ValidationReport(issues=[ValidationIssue(variable='EXTRA', message='variable not declared in spec', severity=<IssueSeverity.WARNING: 'warning'>, code='extra', hint='Add it to envkeep.toml or remove it from the environment.')])

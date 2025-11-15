@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from pathlib import Path
 
 from . import __version__
@@ -21,9 +22,10 @@ def _hash_file(path: Path) -> str:
 class Cache:
     """Manages the caching of validation reports."""
 
-    def __init__(self, cache_dir: Path | str = ".envkeep_cache"):
+    def __init__(self, cache_dir: Path | str = ".envkeep_cache", ttl: int = 0):
         self._root = Path(cache_dir)
         self._spec_hash_file = self._root / "spec.hash"
+        self.ttl = ttl
 
     def _ensure_dir(self) -> None:
         self._root.mkdir(exist_ok=True)
@@ -46,7 +48,10 @@ class Cache:
                 return None
 
             data = json.loads(profile_cache_file.read_text(encoding="utf-8"))
-            return ValidationReport.from_dict(data)
+            if self.ttl > 0 and time.time() - data.get("timestamp", 0) > self.ttl:
+                return None  # Cache has expired
+
+            return ValidationReport.from_dict(data["report"])
         except FileNotFoundError:
             return None  # Cache directory or spec hash file not found
         except (OSError, json.JSONDecodeError) as e:
@@ -61,7 +66,8 @@ class Cache:
             self._spec_hash_file.write_text(current_spec_hash, encoding="utf-8")
 
             profile_cache_file = self._root / f"{_hash_file(profile_path)}.json"
-            profile_cache_file.write_text(json.dumps(report.to_dict()), encoding="utf-8")
+            data = {"timestamp": time.time(), "report": report.to_dict()}
+            profile_cache_file.write_text(json.dumps(data), encoding="utf-8")
         except OSError as e:
             # If caching fails, it's not a critical error.
             logger.warning("Failed to write cache: %s", e)

@@ -17,10 +17,11 @@ from . import __version__
 from ._compat import tomllib
 from .cache import Cache
 from .config import load_config
+from .display import render_diff_report, render_validation_report
 from .plugins import load_backends
-from .report import DiffKind, DiffReport, IssueSeverity, ValidationReport
+from .report import DiffReport, IssueSeverity, ValidationReport
 from .snapshot import EnvSnapshot
-from .spec import EnvSpec, ProfileSpec
+from .spec import EnvSpec, ProfileSpec, VariableType
 from .utils import (
     OptionalPath,
     casefold_sorted,
@@ -41,12 +42,12 @@ def version_callback(value: bool) -> None:
 
 
 try:  # pragma: no cover - Click 8.0 compatibility
-    from click._utils import UNSET as _CLICK_UNSET
+    from click._utils import UNSET as _CLICK_UNSET  # type: ignore
 except ImportError:  # pragma: no cover - Click >=8.1 renamed internals
-    _CLICK_UNSET: Sentinel | None = None
+    _CLICK_UNSET = None
 
 if _CLICK_UNSET is None:  # pragma: no cover - Typer >=0.12 on newer Click versions
-    warnings.filterwarnings(  # type: ignore[unreachable]
+    warnings.filterwarnings(
         "ignore",
         message="The 'is_flag' and 'flag_value' parameters are not supported by Typer",
         category=DeprecationWarning,
@@ -59,6 +60,48 @@ app = typer.Typer(
 console = Console()
 DEFAULT_OUTPUT_FORMAT = "text"
 DEFAULT_PROFILE = "all"
+
+
+SPEC_OPTION = typer.Option(
+    None,
+    "--spec",
+    "-s",
+    help="Path to envkeep spec (searches parents if not specified).",
+)
+FORMAT_OPTION = typer.Option(
+    DEFAULT_OUTPUT_FORMAT,
+    "--format",
+    "-f",
+    help="Output format: text or json.",
+)
+FORMAT_OPTION.case_sensitive = False
+PROFILE_OPTION = typer.Option(
+    DEFAULT_PROFILE,
+    "--profile",
+    "-p",
+    help="Profile to validate (all to run every profile).",
+)
+PROFILE_OPTION.show_default = True
+PROFILE_BASE_OPTION = typer.Option(
+    None,
+    "--profile-base",
+    help="Override the base directory used to resolve relative profile env_file paths.",
+)
+GENERATE_OUTPUT_OPTION = typer.Option(
+    None,
+    "--output",
+    "-o",
+    help="Where to write the generated file.",
+)
+ENV_FILE_ARGUMENT = typer.Argument(..., help="Path to the environment file.")
+DIFF_FIRST_ARGUMENT = typer.Argument(..., help="Baseline environment file.")
+DIFF_SECOND_ARGUMENT = typer.Argument(..., help="Target environment file.")
+
+SPEC_OPTION_DEFAULT = cast(OptionalPath, SPEC_OPTION)
+FORMAT_OPTION_DEFAULT = cast(str, FORMAT_OPTION)
+PROFILE_OPTION_DEFAULT = cast(str, PROFILE_OPTION)
+PROFILE_BASE_OPTION_DEFAULT = cast(OptionalPath, PROFILE_BASE_OPTION)
+GENERATE_OUTPUT_OPTION_DEFAULT = cast(OptionalPath, GENERATE_OUTPUT_OPTION)
 
 
 @app.callback()
@@ -75,9 +118,16 @@ def main(
     pass
 
 
-def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
+def _fetch_remote_values(
+    spec: EnvSpec,
+    report: ValidationReport,
+    *,
+    strict_plugins: bool,
+) -> dict[str, str]:
     """Fetch values from all remote backends defined in the spec."""
-    backends = load_backends()
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    backends = load_backends(spec.tool_config)
     if not backends:
         return {}
 
@@ -93,13 +143,25 @@ def _fetch_remote_values(spec: EnvSpec) -> dict[str, str]:
                 pass
 
     fetched_values: dict[str, str] = {}
-    for backend_name, sources in sources_by_backend.items():
-        backend = backends[backend_name]
-        try:
-            results = backend.fetch(sources)
-            fetched_values.update(results)
-        except Exception:
-            logger.exception("Plugin %s failed to fetch secrets", backend_name)
+    with ThreadPoolExecutor() as executor:
+        future_to_backend = {
+            executor.submit(backends[backend_name].fetch, sources): backend_name
+            for backend_name, sources in sources_by_backend.items()
+        }
+        for future in as_completed(future_to_backend):
+            backend_name = future_to_backend[future]
+            try:
+                results = future.result()
+                fetched_values.update(results)
+            except Exception as exc:
+                if strict_plugins:
+                    raise
+                spec._handle_backend_failure(  # type: ignore
+                    backend_name,
+                    str(exc),
+                    report,
+                )
+                logger.exception("Plugin %s failed to fetch secrets", backend_name)
 
     return fetched_values
 
@@ -138,48 +200,6 @@ def _coerce_output_format(raw: str) -> OutputFormat:
     except typer.BadParameter as exc:
         typer.echo(str(exc))
         raise typer.Exit(code=2) from exc
-
-
-SPEC_OPTION = _option_with_value(
-    None,
-    "--spec",
-    "-s",
-    help="Path to envkeep spec (searches parents if not specified).",
-)
-FORMAT_OPTION = _option_with_value(
-    DEFAULT_OUTPUT_FORMAT,
-    "--format",
-    "-f",
-    help="Output format: text or json.",
-)
-FORMAT_OPTION.case_sensitive = False
-PROFILE_OPTION = _option_with_value(
-    DEFAULT_PROFILE,
-    "--profile",
-    "-p",
-    help="Profile to validate (all to run every profile).",
-)
-PROFILE_OPTION.show_default = True
-PROFILE_BASE_OPTION = _option_with_value(
-    None,
-    "--profile-base",
-    help="Override the base directory used to resolve relative profile env_file paths.",
-)
-GENERATE_OUTPUT_OPTION = _option_with_value(
-    None,
-    "--output",
-    "-o",
-    help="Where to write the generated file.",
-)
-ENV_FILE_ARGUMENT = typer.Argument(..., help="Path to the environment file.")
-DIFF_FIRST_ARGUMENT = typer.Argument(..., help="Baseline environment file.")
-DIFF_SECOND_ARGUMENT = typer.Argument(..., help="Target environment file.")
-
-SPEC_OPTION_DEFAULT = cast(OptionalPath, SPEC_OPTION)
-FORMAT_OPTION_DEFAULT = cast(str, FORMAT_OPTION)
-PROFILE_OPTION_DEFAULT = cast(str, PROFILE_OPTION)
-PROFILE_BASE_OPTION_DEFAULT = cast(OptionalPath, PROFILE_BASE_OPTION)
-GENERATE_OUTPUT_OPTION_DEFAULT = cast(OptionalPath, GENERATE_OUTPUT_OPTION)
 
 
 def _emit_json(payload: Any) -> None:
@@ -283,50 +303,6 @@ def _handle_diff_output(
     return 0 if report.is_clean() else 1
 
 
-def _format_severity_summary(report: ValidationReport, *, top_limit: int | None) -> str:
-    limit = normalized_limit(top_limit)
-    totals = report.severity_totals()
-    ordered = [
-        ("Errors", IssueSeverity.ERROR.value),
-        ("Warnings", IssueSeverity.WARNING.value),
-        ("Info", IssueSeverity.INFO.value),
-    ]
-    parts = [f"{label}: {totals[key]}" for label, key in ordered if totals[key] > 0]
-    if not parts:
-        parts = [f"{label}: {totals[key]}" for label, key in ordered]
-    top_variables: tuple[str, ...]
-    if limit == 0:
-        top_variables = ()
-    else:
-        top_source = report.top_variables(None if limit is None else limit)
-        top_variables = tuple(name for name, _ in top_source)
-    if top_variables:
-        parts.append("Impacted: " + ", ".join(top_variables))
-    return " · ".join(parts)
-
-
-def _format_diff_summary(report: DiffReport, *, top_limit: int | None) -> str:
-    limit = normalized_limit(top_limit)
-    summary = report.counts_by_kind()
-    ordered = [
-        ("Missing", DiffKind.MISSING.value),
-        ("Extra", DiffKind.EXTRA.value),
-        ("Changed", DiffKind.CHANGED.value),
-    ]
-    parts = [f"{label}: {summary[key]}" for label, key in ordered if summary[key] > 0]
-    if not parts:
-        parts = [f"{label}: {summary[key]}" for label, key in ordered]
-    top_variables: tuple[str, ...]
-    if limit == 0:
-        top_variables = ()
-    else:
-        top_source = report.top_variables(None if limit is None else limit)
-        top_variables = tuple(name for name, _ in top_source)
-    if top_variables:
-        parts.append("Impacted: " + ", ".join(top_variables))
-    return " · ".join(parts)
-
-
 def _emit_doctor_json(
     results: list[dict[str, Any]],
     *,
@@ -348,6 +324,7 @@ def _emit_doctor_json(
     aggregated_duplicates: set[str] = set()
     aggregated_extras: set[str] = set()
     aggregated_invalid_lines: list[dict[str, Any]] = []
+    total_warnings = 0
     for item in results:
         summary = item.get("summary")
         if not summary:
@@ -357,6 +334,7 @@ def _emit_doctor_json(
             severity_totals[key] += value
         warnings = item.get("warnings")
         if warnings:
+            total_warnings += warnings.get("total", 0)
             aggregated_duplicates.update(warnings.get("duplicates", ()))
             aggregated_extras.update(warnings.get("extra_variables", ()))
             profile = item.get("profile")
@@ -382,6 +360,7 @@ def _emit_doctor_json(
         "profile_base_dir": profile_base_dir,
     }
     warnings_payload = {
+        "total": total_warnings,
         "duplicates": casefold_sorted(aggregated_duplicates),
         "extra_variables": casefold_sorted(aggregated_extras),
         "invalid_lines": sorted(
@@ -428,18 +407,6 @@ def _load_spec_from_path(path: Path, stdin_data: str | None) -> EnvSpec:
         raise typer.BadParameter(f"failed to load spec: {exc}") from exc
 
 
-def _merge_specs(base_spec: EnvSpec, imported_spec: EnvSpec) -> None:
-    """Merge an imported spec into a base spec."""
-    existing_vars = {var.name for var in base_spec.variables}
-    base_spec.variables.extend(
-        var for var in imported_spec.variables if var.name not in existing_vars
-    )
-    existing_profiles = {prof.name for prof in base_spec.profiles}
-    base_spec.profiles.extend(
-        prof for prof in imported_spec.profiles if prof.name not in existing_profiles
-    )
-
-
 def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
     if path is None:
         config = load_config()
@@ -450,254 +417,9 @@ def load_spec(path: Path | None, *, stdin_data: str | None = None) -> EnvSpec:
         if path is None:
             raise typer.BadParameter("spec file not found (envkeep.toml)")
 
-    base_spec = _load_spec_from_path(path, stdin_data)
-    if not base_spec.imports:
-        return base_spec
-
-    base_dir = path.parent
-    for import_path_str in base_spec.imports:
-        import_path = base_dir / import_path_str
-        imported_spec = load_spec(import_path)
-        _merge_specs(base_spec, imported_spec)
-
-    return base_spec
-
-
-@app.command()
-def check(
-    env_file: Path = ENV_FILE_ARGUMENT,
-    spec: OptionalPath = SPEC_OPTION_DEFAULT,
-    output_format: str = FORMAT_OPTION_DEFAULT,
-    allow_extra: bool = typer.Option(
-        False,
-        "--allow-extra",
-        help="Allow variables not declared in the spec.",
-    ),
-    fail_on_warnings: bool = typer.Option(
-        False,
-        "--fail-on-warnings",
-        help="Treat warnings as errors for CI enforcement.",
-    ),
-    summary_top: int = typer.Option(
-        3,
-        "--summary-top",
-        help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
-    ),
-    no_cache: bool = typer.Option(
-        False,
-        "--no-cache",
-        help="Disable caching of validation reports.",
-    ),
-) -> None:
-    """Validate an environment against the specification."""
-
-    if summary_top < 0:
-        _usage_error("summary limit must be non-negative")
-    env_path = str(env_file)
-    spec_path_str, stdin_spec = _read_spec_input(spec)
-    spec_path = Path(spec_path_str) if spec_path_str else None
-    if spec_path_str == "-" and env_path == "-":
-        _usage_error("cannot read both spec and environment from stdin")
-    env_spec = load_spec(spec_path, stdin_data=stdin_spec)
-
-    cache = Cache() if not no_cache else None
-
-    report = cache.get_report(env_file, spec_path) if cache and spec_path else None
-    if report is None:
-        # Fetch remote values from plugins
-        remote_values = _fetch_remote_values(env_spec)
-
-        if env_path == "-":
-            data = sys.stdin.read()
-            snapshot = EnvSnapshot.from_text(data, source="stdin")
-        else:
-            snapshot = EnvSnapshot.from_env_file(env_file)
-
-        # Merge local and remote values, with remote taking precedence
-        combined_values = snapshot.to_dict()
-        combined_values.update(remote_values)
-
-        # Create a new snapshot from the combined values for validation
-        combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
-
-        report = env_spec.validate(combined_snapshot, allow_extra=allow_extra)
-        if cache and spec_path:
-            cache.set_report(env_file, spec_path, report)
-
-    fmt = _coerce_output_format(output_format)
-    exit_code = _handle_validation_output(
-        report,
-        source=str(env_file),
-        output_format=fmt,
-        fail_on_warnings=fail_on_warnings,
-        summary_top=summary_top,
-    )
-    raise typer.Exit(code=exit_code)
-
-
-@app.command()
-def diff(
-    first: Path = DIFF_FIRST_ARGUMENT,
-    second: Path = DIFF_SECOND_ARGUMENT,
-    spec: OptionalPath = SPEC_OPTION_DEFAULT,
-    output_format: str = FORMAT_OPTION_DEFAULT,
-    summary_top: int = typer.Option(
-        3,
-        "--summary-top",
-        help="Limit top impacted variables shown in summaries (0 to suppress).",
-    ),
-) -> None:
-    """Compare two environment files using the spec for normalization."""
-
-    if summary_top < 0:
-        _usage_error("summary limit must be non-negative")
-    spec_path_str, stdin_spec = _read_spec_input(spec)
-    minus_count = sum(1 for candidate in (str(first), str(second)) if candidate == "-")
-    if spec_path_str == "-" and minus_count:
-        _usage_error("cannot combine spec from stdin with environment stdin input")
-    env_spec = load_spec(spec, stdin_data=stdin_spec)
-    stdin_buffer: str | None = None
-    if minus_count > 1:
-        _usage_error("stdin can only be supplied for one file in diff.")
-
-    def load_snapshot(path: Path, *, label: str) -> EnvSnapshot:
-        nonlocal stdin_buffer
-        if str(path) == "-":
-            if stdin_buffer is None:
-                stdin_buffer = sys.stdin.read()
-            return EnvSnapshot.from_text(stdin_buffer, source=f"stdin:{label}")
-        return EnvSnapshot.from_env_file(path)
-
-    left = load_snapshot(first, label="left")
-    right = load_snapshot(second, label="right")
-    report = env_spec.diff(left, right)
-    fmt = _coerce_output_format(output_format)
-    exit_code = _handle_diff_output(
-        report,
-        left=str(first),
-        right=str(second),
-        output_format=fmt,
-        summary_top=summary_top,
-    )
-    raise typer.Exit(code=exit_code)
-
-
-@app.command()
-def generate(
-    spec: OptionalPath = SPEC_OPTION_DEFAULT,
-    output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
-    no_redact_secrets: bool = typer.Option(
-        False,
-        "--no-redact-secrets",
-        help="Disable masking for variables marked as secret.",
-    ),
-) -> None:
-    """Generate a sanitized .env example from the spec."""
-
-    _, stdin_spec = _read_spec_input(spec)
-    env_spec = load_spec(spec, stdin_data=stdin_spec)
-    content = env_spec.generate_example(redact_secrets=not no_redact_secrets)
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(content, encoding="utf-8")
-        typer.echo(f"Wrote example to {output}")
-    else:
-        typer.echo(content)
-
-
-@app.command()
-def inspect(
-    spec: OptionalPath = SPEC_OPTION_DEFAULT,
-    output_format: str = FORMAT_OPTION_DEFAULT,
-    profile_base: OptionalPath = PROFILE_BASE_OPTION_DEFAULT,
-) -> None:
-    """Print a summary of variables and profiles declared in the spec."""
-    config = load_config()
-    spec_path_resolved = spec or config.spec_path
-    profile_base_path = resolve_optional_path_option(profile_base) or config.profile_base
-
-    spec_path_str, stdin_spec = _read_spec_input(spec_path_resolved)
-    spec_path = Path(spec_path_str)
-    spec_base = _spec_base_dir(spec_path)
-    profile_base_dir = _resolve_profile_base_dir(
-        profile_base_path,
-        default_base=config.project_root or spec_base,
-    )
-    env_spec = load_spec(Path(spec_path_str) if spec_path_str else None, stdin_data=stdin_spec)
-    fmt = _coerce_output_format(output_format)
-    if fmt is OutputFormat.JSON:
-        variables_payload = [
-            {
-                "name": variable.name,
-                "type": variable.var_type.value,
-                "required": variable.required,
-                "secret": variable.secret,
-                "description": variable.description,
-                "default": variable.default,
-                "choices": list(variable.choices),
-                "pattern": variable.pattern.pattern if variable.pattern else None,
-                "example": variable.example,
-                "allow_empty": variable.allow_empty,
-            }
-            for variable in env_spec.variables
-        ]
-        profiles_payload = []
-        for profile in env_spec.profiles:
-            resolved_path = _resolve_profile_path(
-                profile.env_file,
-                base_dir=profile_base_dir,
-            )
-            profiles_payload.append(
-                {
-                    "name": profile.name,
-                    "env_file": profile.env_file,
-                    "resolved_env_file": str(resolved_path),
-                    "description": profile.description,
-                },
-            )
-        payload = {
-            "summary": env_spec.summary(),
-            "variables": variables_payload,
-            "profiles": profiles_payload,
-            "profile_base_dir": str(profile_base_dir),
-        }
-        _emit_json(payload)
-        return
-    table = Table(title=f"Envkeep Summary (version {env_spec.version})")
-    table.add_column("Variable")
-    table.add_column("Type")
-    table.add_column("Required")
-    table.add_column("Secret")
-    table.add_column("Description")
-    for variable in env_spec.variables:
-        table.add_row(
-            variable.name,
-            variable.var_type.value,
-            "yes" if variable.required else "no",
-            "yes" if variable.secret else "no",
-            variable.description or "",
-        )
-    if env_spec.profiles:
-        table.add_section()
-        table.add_row("Profiles", "", "", "", "")
-        for profile in env_spec.profiles:
-            resolved_path = _resolve_profile_path(
-                profile.env_file,
-                base_dir=profile_base_dir,
-            )
-            descriptor = profile.description or profile.env_file
-            if descriptor:
-                descriptor = f"{descriptor} ({resolved_path})"
-            else:
-                descriptor = str(resolved_path)
-            table.add_row(
-                f"• {profile.name}",
-                "",
-                "",
-                "",
-                descriptor,
-            )
-    console.print(table)
+    spec = _load_spec_from_path(path, stdin_data)
+    spec.load_imports(path.parent)
+    return spec
 
 
 def _aggregate_doctor_results(
@@ -818,6 +540,402 @@ def _render_doctor_text_summary(
 
 
 @app.command()
+def check(
+    env_file: Path = ENV_FILE_ARGUMENT,
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
+    output_format: str = FORMAT_OPTION_DEFAULT,
+    allow_extra: bool = typer.Option(
+        False,
+        "--allow-extra",
+        help="Allow variables not declared in the spec.",
+    ),
+    fail_on_warnings: bool = typer.Option(
+        False,
+        "--fail-on-warnings",
+        help="Treat warnings as errors for CI enforcement.",
+    ),
+    summary_top: int = typer.Option(
+        3,
+        "--summary-top",
+        help="Limit top impacted variables/codes shown in summaries (0 to suppress).",
+    ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Disable caching of validation reports.",
+    ),
+    ttl: int = typer.Option(
+        0,
+        "--ttl",
+        help="Time to live for cache in seconds.",
+    ),
+    strict_plugins: bool = typer.Option(
+        False,
+        "--strict-plugins",
+        help="Treat plugin failures as errors.",
+    ),
+) -> None:
+    """Validate an environment against the specification."""
+
+    if summary_top < 0:
+        _usage_error("summary limit must be non-negative")
+    env_path = str(env_file)
+    spec_path_str, stdin_spec = _read_spec_input(spec)
+    spec_path = Path(spec_path_str) if spec_path_str else None
+    if spec_path_str == "-" and env_path == "-":
+        _usage_error("cannot read both spec and environment from stdin")
+    env_spec = load_spec(spec_path, stdin_data=stdin_spec)
+
+    cache = Cache(ttl=ttl) if not no_cache else None
+
+    report = cache.get_report(env_file, spec_path) if cache and spec_path else None
+    if report is None:
+        report = ValidationReport()
+        # Fetch remote values from plugins
+        remote_values = _fetch_remote_values(
+            env_spec,
+            report,
+            strict_plugins=strict_plugins,
+        )
+
+        if env_path == "-":
+            data = sys.stdin.read()
+            snapshot = EnvSnapshot.from_text(data, source="stdin")
+        else:
+            snapshot = EnvSnapshot.from_env_file(env_file)
+
+        # Merge local and remote values, with remote taking precedence
+        combined_values = snapshot.to_dict()
+        combined_values.update(remote_values)
+
+        # Create a new snapshot from the combined values for validation
+        combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_file))
+
+        report.extend(env_spec.validate(combined_snapshot, allow_extra=allow_extra).issues)
+        if cache and spec_path:
+            cache.set_report(env_file, spec_path, report)
+    fmt = _coerce_output_format(output_format)
+    exit_code = _handle_validation_output(
+        report,
+        source=str(env_file),
+        output_format=fmt,
+        fail_on_warnings=fail_on_warnings,
+        summary_top=summary_top,
+    )
+    raise typer.Exit(code=exit_code)
+
+
+@app.command()
+def diff(
+    first: Path = DIFF_FIRST_ARGUMENT,
+    second: Path = DIFF_SECOND_ARGUMENT,
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
+    output_format: str = FORMAT_OPTION_DEFAULT,
+    summary_top: int = typer.Option(
+        3,
+        "--summary-top",
+        help="Limit top impacted variables shown in summaries (0 to suppress).",
+    ),
+) -> None:
+    """Compare two environment files using the spec for normalization."""
+
+    if summary_top < 0:
+        _usage_error("summary limit must be non-negative")
+    spec_path_str, stdin_spec = _read_spec_input(spec)
+    minus_count = sum(1 for candidate in (str(first), str(second)) if candidate == "-")
+    if spec_path_str == "-" and minus_count:
+        _usage_error("cannot combine spec from stdin with environment stdin input")
+    env_spec = load_spec(spec, stdin_data=stdin_spec)
+    stdin_buffer: str | None = None
+    if minus_count > 1:
+        _usage_error("stdin can only be supplied for one file in diff.")
+
+    def load_snapshot(path: Path, *, label: str) -> EnvSnapshot:
+        nonlocal stdin_buffer
+        if str(path) == "-":
+            if stdin_buffer is None:
+                stdin_buffer = sys.stdin.read()
+            return EnvSnapshot.from_text(stdin_buffer, source=f"stdin:{label}")
+        return EnvSnapshot.from_env_file(path)
+
+    left = load_snapshot(first, label="left")
+    right = load_snapshot(second, label="right")
+    report = env_spec.diff(left, right)
+    fmt = _coerce_output_format(output_format)
+    exit_code = _handle_diff_output(
+        report,
+        left=str(first),
+        right=str(second),
+        output_format=fmt,
+        summary_top=summary_top,
+    )
+    raise typer.Exit(code=exit_code)
+
+
+@app.command()
+def generate(
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
+    output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
+    no_redact_secrets: bool = typer.Option(
+        False,
+        "--no-redact-secrets",
+        help="Disable masking for variables marked as secret.",
+    ),
+) -> None:
+    """Generate a sanitized .env example from the spec."""
+
+    _, stdin_spec = _read_spec_input(spec)
+    env_spec = load_spec(spec, stdin_data=stdin_spec)
+    content = env_spec.generate_example(redact_secrets=not no_redact_secrets)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote example to {output}")
+    else:
+        typer.echo(content)
+
+
+@app.command()
+def generate_docs(
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
+    output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
+) -> None:
+    """Generate Markdown documentation for the environment variables."""
+    _, stdin_spec = _read_spec_input(spec)
+    env_spec = load_spec(spec, stdin_data=stdin_spec)
+    content = _generate_docs_content(env_spec)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote documentation to {output}")
+    else:
+        typer.echo(content)
+
+
+def _generate_docs_content(env_spec: EnvSpec) -> str:
+    """Generate Markdown content for the environment variables."""
+    lines = [
+        "# Environment Variables",
+        "",
+        "| Variable | Type | Required | Description | Default |",
+        "|----------|------|----------|-------------|---------|",
+    ]
+    for var in env_spec.variables:
+        lines.append(
+            f"| {var.name} | {var.var_type.value} | {{'Yes' if var.required else 'No'}} | {var.description or ''} | {var.default or ''} |",
+        )
+    return "\n".join(lines)
+
+
+@app.command()
+def version() -> None:
+    """Print the version and exit."""
+    typer.echo(f"envkeep version: {__version__}")
+    raise typer.Exit()
+
+
+@app.command()
+def config() -> None:
+    """Print the current configuration."""
+    config = load_config()
+    typer.echo(f"Project root: {config.project_root or '(not set)'}")
+    typer.echo(f"Spec path: {config.spec_path or '(not set)'}")
+    typer.echo(f"Profile base: {config.profile_base or '(not set)'}")
+
+
+@app.command()
+def generate_schema(
+    output: OptionalPath = GENERATE_OUTPUT_OPTION_DEFAULT,
+) -> None:
+    """Generate a JSON schema for the envkeep.toml file."""
+    schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "envkeep.toml schema",
+        "type": "object",
+        "properties": {
+            "version": {"type": "integer"},
+            "metadata": {"type": "object"},
+            "variables": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "type": {"type": "string", "enum": [t.value for t in VariableType]},
+                        "required": {"type": "boolean"},
+                        "default": {"type": "string"},
+                        "description": {"type": "string"},
+                        "secret": {"type": "boolean"},
+                        "choices": {"type": "array", "items": {"type": "string"}},
+                        "pattern": {"type": "string"},
+                        "example": {"type": "string"},
+                        "allow_empty": {"type": "boolean"},
+                        "source": {"type": "string"},
+                        "min_length": {"type": "integer"},
+                        "max_length": {"type": "integer"},
+                        "min_value": {"type": "number"},
+                        "max_value": {"type": "number"},
+                    },
+                    "required": ["name"],
+                },
+            },
+            "profiles": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "env_file": {"type": "string"},
+                        "description": {"type": "string"},
+                    },
+                    "required": ["name", "env_file"],
+                },
+            },
+        },
+    }
+    content = json.dumps(schema, indent=2)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote schema to {output}")
+    else:
+        typer.echo(content)
+
+
+@app.command()
+def inspect(
+    spec: OptionalPath = SPEC_OPTION_DEFAULT,
+    output_format: str = FORMAT_OPTION_DEFAULT,
+    profile_base: OptionalPath = PROFILE_BASE_OPTION_DEFAULT,
+) -> None:
+    """Print a summary of variables and profiles declared in the spec."""
+    config = load_config()
+    spec_path_resolved = spec or config.spec_path
+    profile_base_path = resolve_optional_path_option(profile_base) or config.profile_base
+
+    spec_path_str, stdin_spec = _read_spec_input(spec_path_resolved)
+    spec_path = Path(spec_path_str)
+    spec_base = _spec_base_dir(spec_path)
+    profile_base_dir = _resolve_profile_base_dir(
+        profile_base_path,
+        default_base=config.project_root or spec_base,
+    )
+    env_spec = load_spec(Path(spec_path_str) if spec_path_str else None, stdin_data=stdin_spec)
+    fmt = _coerce_output_format(output_format)
+    if fmt is OutputFormat.JSON:
+        variables_payload = [
+            {
+                "name": variable.name,
+                "type": variable.var_type.value,
+                "required": variable.required,
+                "secret": variable.secret,
+                "description": variable.description,
+                "default": variable.default,
+                "choices": list(variable.choices),
+                "pattern": variable.pattern.pattern if variable.pattern else None,
+                "example": variable.example,
+                "allow_empty": variable.allow_empty,
+            }
+            for variable in env_spec.variables
+        ]
+        profiles_payload = []
+        for profile in env_spec.profiles:
+            resolved_path = _resolve_profile_path(
+                profile.env_file,
+                base_dir=profile_base_dir,
+            )
+            profiles_payload.append(
+                {
+                    "name": profile.name,
+                    "env_file": profile.env_file,
+                    "resolved_env_file": str(resolved_path),
+                    "description": profile.description,
+                },
+            )
+        payload = {
+            "summary": env_spec.summary(),
+            "variables": variables_payload,
+            "profiles": profiles_payload,
+            "profile_base_dir": str(profile_base_dir),
+        }
+        _emit_json(payload)
+        return
+    table = Table(title=f"Envkeep Summary (version {env_spec.version})")
+    table.add_column("Variable")
+    table.add_column("Type")
+    table.add_column("Required")
+    table.add_column("Secret")
+    table.add_column("Description")
+    for variable in env_spec.variables:
+        table.add_row(
+            variable.name,
+            variable.var_type.value,
+            "yes" if variable.required else "no",
+            "yes" if variable.secret else "no",
+            variable.description or "",
+        )
+    if env_spec.profiles:
+        table.add_section()
+        table.add_row("Profiles", "", "", "", "")
+        for profile in env_spec.profiles:
+            resolved_path = _resolve_profile_path(
+                profile.env_file,
+                base_dir=profile_base_dir,
+            )
+            descriptor = profile.description or profile.env_file
+            if descriptor:
+                descriptor = f"{descriptor} ({resolved_path})"
+            else:
+                descriptor = str(resolved_path)
+            table.add_row(
+                f"• {profile.name}",
+                "",
+                "",
+                "",
+                descriptor,
+            )
+    console.print(table)
+
+
+@app.command()
+def init(
+    env_file: Path = typer.Argument(..., help="Path to environment file to import."),
+    output: Path = typer.Option(
+        "envkeep.toml",
+        "--output",
+        "-o",
+        help="Path where spec file should be written.",
+    ),
+    description: str = typer.Option(
+        "My application",
+        "--description",
+        help="Description of the application.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite an existing spec file without prompting.",
+    ),
+) -> None:
+    """Create a new envkeep.toml spec from an existing .env file."""
+    if not env_file.exists():
+        _usage_error(f"input file not found: {env_file}")
+    if output.exists() and not force:
+        if not typer.confirm(f"overwrite existing file? {output}"):
+            typer.echo("Aborted.")
+            raise typer.Exit(code=1)
+    snapshot = EnvSnapshot.from_env_file(env_file)
+    spec = EnvSpec.from_snapshot(snapshot, description=description)
+    content = spec.generate_example(redact_secrets=False)
+    try:
+        output.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote spec to {output}")
+    except OSError as exc:
+        _usage_error(f"failed to write spec: {exc}")
+
+
+@app.command()
 def doctor(
     spec: OptionalPath = SPEC_OPTION_DEFAULT,
     profile: str = PROFILE_OPTION_DEFAULT,
@@ -843,8 +961,24 @@ def doctor(
         "--no-cache",
         help="Disable caching of validation reports.",
     ),
+    ttl: int = typer.Option(
+        0,
+        "--ttl",
+        help="Time to live for cache in seconds.",
+    ),
+    strict_plugins: bool = typer.Option(
+        False,
+        "--strict-plugins",
+        help="Treat plugin failures as errors.",
+    ),
+    max_workers: int = typer.Option(
+        None,
+        "--max-workers",
+        help="Maximum number of worker threads.",
+    ),
 ) -> None:
     """Validate one or more profiles declared in the spec."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     if summary_top < 0:
         _usage_error("summary limit must be non-negative")
@@ -866,7 +1000,7 @@ def doctor(
         typer.echo("No profiles declared in spec.")
         raise typer.Exit(code=0)
     else:
-        cache = Cache() if not no_cache else None
+        cache = Cache(ttl=ttl) if not no_cache else None
 
         def _selected_entry(item: ProfileSpec) -> dict[str, Any]:
             resolved = _resolve_profile_path(item.env_file, base_dir=profile_base_dir)
@@ -892,56 +1026,72 @@ def doctor(
         checked_profiles = 0
         top_limit = normalized_limit(summary_top) or 0
         resolved_profile_records: list[tuple[str, str, Path, bool]] = []
-        for entry in selected_profiles:
-            name = entry["name"]
-            env_file_raw = entry["env_file"]
-            env_path = entry["path"]
-            exists = env_path.exists()
-            resolved_profile_records.append((name, env_file_raw, env_path, exists))
-            if not exists:
-                missing_profiles += 1
-                if use_json:
-                    results.append(
-                        {
-                            "profile": name,
-                            "env_file": env_file_raw,
-                            "resolved_env_file": str(env_path),
-                            "path": str(env_path),
-                            "error": "missing env file",
-                        },
-                    )
-                else:
-                    typer.echo(f"Profile {name}: missing env file {env_path}")
-                exit_code = 1
-                continue
 
-            report = cache.get_report(env_path, spec_path) if cache else None
-            if report is None:
-                snapshot = EnvSnapshot.from_env_file(env_path)
-                report = env_spec.validate(snapshot, allow_extra=allow_extra)
-                if cache:
-                    cache.set_report(env_path, spec_path, report)
+        max_workers_val = max_workers if max_workers is not None else None
+        with ThreadPoolExecutor(max_workers=max_workers_val) as executor:
+            future_to_profile = {
+                executor.submit(
+                    _validate_profile,
+                    entry,
+                    spec_path,
+                    stdin_spec,
+                    cache,
+                    allow_extra,
+                    top_limit,
+                    strict_plugins,
+                ): entry
+                for entry in selected_profiles
+            }
+            for future in as_completed(future_to_profile):
+                entry = future_to_profile[future]
+                name = entry["name"]
+                env_file_raw = entry["env_file"]
+                env_path = entry["path"]
+                try:
+                    report, exists = future.result()
+                    resolved_profile_records.append((name, env_file_raw, env_path, exists))
+                    if not exists:
+                        missing_profiles += 1
+                        if use_json:
+                            results.append(
+                                {
+                                    "profile": name,
+                                    "env_file": env_file_raw,
+                                    "resolved_env_file": str(env_path),
+                                    "path": str(env_path),
+                                    "error": "missing env file",
+                                },
+                            )
+                        else:
+                            typer.echo(f"Profile {name}: missing env file {env_path}")
+                        exit_code = 1
+                        continue
 
-            checked_profiles += 1
-            if use_json:
-                summary = report.summary(top_limit=top_limit)
+                    checked_profiles += 1
+                    if use_json:
+                        summary = report.summary(top_limit=top_limit)
+                        results.append(
+                            {
+                                "profile": name,
+                                "env_file": env_file_raw,
+                                "resolved_env_file": str(env_path),
+                                "path": str(env_path),
+                                "report": report,
+                                "summary": summary,
+                                "warnings": report.warning_summary(),
+                            },
+                        )
+                    else:
+                        console.rule(f"Profile: {name}")
+                        render_validation_report(report, source=str(env_path), top_limit=top_limit)
+                    if report.has_errors or (fail_on_warnings and report.has_warnings):
+                        exit_code = 1
+                except Exception as exc:
+                    logger.exception("Error validating profile %s: %s", name, exc)
+                    exit_code = 1
 
-                results.append(
-                    {
-                        "profile": name,
-                        "env_file": env_file_raw,
-                        "resolved_env_file": str(env_path),
-                        "path": str(env_path),
-                        "report": report,
-                        "summary": summary,
-                        "warnings": report.warning_summary(),
-                    },
-                )
-            else:
-                console.rule(f"Profile: {name}")
-                render_validation_report(report, source=str(env_path), top_limit=top_limit)
-            if report.has_errors or (fail_on_warnings and report.has_warnings):
-                exit_code = 1
+        if missing_profiles > 0:
+            exit_code = 1
 
         aggregated_results = _aggregate_doctor_results(results, top_limit)
 
@@ -968,100 +1118,38 @@ def doctor(
                 top_limit,
                 resolved_profile_records,
             )
-        raise typer.Exit(code=exit_code)
+
+    raise typer.Exit(code=exit_code)
 
 
-def render_validation_report(
-    report: ValidationReport,
-    *,
-    source: str,
-    top_limit: int | None = None,
-) -> None:
-    console.print(f"Validating [bold]{source}[/bold]")
-    if not report.issues:
-        console.print("[green]All checks passed.[/green]")
-        return
-    style_map = {
-        IssueSeverity.ERROR: "red",
-        IssueSeverity.WARNING: "yellow",
-        IssueSeverity.INFO: "blue",
-    }
-    label_map = {
-        IssueSeverity.ERROR: "Errors",
-        IssueSeverity.WARNING: "Warnings",
-        IssueSeverity.INFO: "Info",
-    }
-    first_section = True
-    for severity in report.non_empty_severities():
-        issues = report.issues_by_severity(severity)
-        if not first_section:
-            console.print()
-        first_section = False
-        console.print(f"[bold underline]{label_map[severity]}[/]")
-        table = Table(show_header=True, header_style="bold")
-        table.add_column("Severity")
-        table.add_column("Variable")
-        table.add_column("Code")
-        table.add_column("Message")
-        table.add_column("Hint", overflow="fold")
-        style = style_map[severity]
-        for issue in issues:
-            table.add_row(
-                f"[{style}]{severity.value.upper()}[/{style}]",
-                issue.variable,
-                issue.code,
-                issue.message,
-                issue.hint or "",
-            )
-        console.print(table)
-    console.print(_format_severity_summary(report, top_limit=top_limit))
+def _validate_profile(
+    entry: dict[str, Any],
+    spec_path: Path,
+    stdin_spec: str | None,
+    cache: Cache | None,
+    allow_extra: bool,
+    top_limit: int,
+    strict_plugins: bool,
+) -> tuple[ValidationReport, bool]:
+    env_path = entry["path"]
+    exists = env_path.exists()
+    if not exists:
+        return ValidationReport(), False
 
-
-def render_diff_report(
-    report: DiffReport,
-    *,
-    left: str,
-    right: str,
-    top_limit: int | None = None,
-) -> None:
-    console.print(f"Diffing [bold]{left}[/bold] -> [bold]{right}[/bold]")
-    if report.is_clean():
-        console.print("[green]No drift detected.[/green]")
-        return
-    style_map = {
-        DiffKind.MISSING: "yellow",
-        DiffKind.EXTRA: "blue",
-        DiffKind.CHANGED: "red",
-    }
-    label_map = {
-        DiffKind.MISSING: "Missing",
-        DiffKind.EXTRA: "Extra",
-        DiffKind.CHANGED: "Changed",
-    }
-    first_section = True
-    for kind in report.non_empty_kinds():
-        entries = report.entries_by_kind(kind)
-        if not first_section:
-            console.print()
-        first_section = False
-        console.print(f"[bold underline]{label_map[kind]}[/]")
-        table = Table(show_header=True, header_style="bold")
-        table.add_column("Variable")
-        table.add_column("Change")
-        table.add_column("Left")
-        table.add_column("Right")
-        style = style_map[kind]
-        for entry in entries:
-            table.add_row(
-                entry.variable,
-                f"[{style}]{entry.kind.value.upper()}[/{style}]",
-                entry.redacted_left() or "",
-                entry.redacted_right() or "",
-            )
-        console.print(table)
-    console.print(_format_diff_summary(report, top_limit=top_limit))
-    console.print(f"Total differences: {report.change_count}")
-
-
-if __name__ == "__main__":
-    app()
+    report = cache.get_report(env_path, spec_path) if cache else None
+    if report is None:
+        report = ValidationReport()
+        env_spec = load_spec(spec_path, stdin_data=stdin_spec)
+        remote_values = _fetch_remote_values(
+            env_spec,
+            report,
+            strict_plugins=strict_plugins,
+        )
+        snapshot = EnvSnapshot.from_env_file(env_path)
+        combined_values = snapshot.to_dict()
+        combined_values.update(remote_values)
+        combined_snapshot = EnvSnapshot.from_dict(combined_values, source=str(env_path))
+        report.extend(env_spec.validate(combined_snapshot, allow_extra=allow_extra).issues)
+        if cache:
+            cache.set_report(env_path, spec_path, report)
+    return report, True

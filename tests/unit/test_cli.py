@@ -21,6 +21,57 @@ PROD_ENV = Path("examples/basic/.env.prod")
 PROD_ENV_ABS = PROD_ENV.resolve()
 
 
+def test_cli_init_creates_spec(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("FOO=bar\nBAZ=qux\n", encoding="utf-8")
+    output = tmp_path / "envkeep.toml"
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(env_file),
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    assert output.exists()
+    content = output.read_text(encoding="utf-8")
+    assert "FOO" in content
+    assert "BAZ" in content
+
+
+def test_cli_init_confirms_overwrite(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("FOO=bar\n", encoding="utf-8")
+    output = tmp_path / "envkeep.toml"
+    output.write_text("initial", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(env_file),
+            "--output",
+            str(output),
+        ],
+        input="n\n",
+    )
+    assert "Aborted" in result.stdout
+    assert output.read_text(encoding="utf-8") == "initial"
+    force_result = runner.invoke(
+        app,
+        [
+            "init",
+            str(env_file),
+            "--output",
+            str(output),
+            "--force",
+        ],
+    )
+    assert force_result.exit_code == 0
+    assert "FOO" in output.read_text(encoding="utf-8")
+
+
 def test_cli_check_success() -> None:
     result = runner.invoke(app, ["check", str(DEV_ENV), "--spec", str(EXAMPLE_SPEC)])
     assert result.exit_code == 0
@@ -987,6 +1038,64 @@ def test_cli_diff_rejects_spec_and_env_stdin(tmp_path: Path) -> None:
     )
     assert result.exit_code != 0
     assert "cannot combine spec from stdin" in result.stderr
+
+
+def test_cli_generate_docs() -> None:
+    result = runner.invoke(app, ["generate-docs", "--spec", str(EXAMPLE_SPEC)])
+    assert result.exit_code == 0
+    assert "| Variable | Type | Required | Description | Default |" in result.stdout
+    assert "| DATABASE_URL |" in result.stdout
+
+
+def test_cli_generate_docs_writes_to_file(tmp_path: Path) -> None:
+    output = tmp_path / "docs.md"
+    result = runner.invoke(
+        app,
+        [
+            "generate-docs",
+            "--spec",
+            str(EXAMPLE_SPEC),
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    assert output.exists()
+    content = output.read_text(encoding="utf-8")
+    assert "| Variable | Type | Required | Description | Default |" in content
+    assert "| DATABASE_URL |" in content
+
+
+def test_cli_version() -> None:
+    result = runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+    assert "envkeep version:" in result.stdout
+
+
+def test_cli_config() -> None:
+    result = runner.invoke(app, ["config"])
+    assert result.exit_code == 0
+    assert "Project root:" in result.stdout
+    assert "Spec path:" in result.stdout
+    assert "Profile base:" in result.stdout
+
+
+def test_cli_generate_schema() -> None:
+    result = runner.invoke(app, ["generate-schema"])
+    assert result.exit_code == 0
+    schema = json.loads(result.stdout)
+    assert schema["$schema"] == "http://json-schema.org/draft-07/schema#"
+    assert "variables" in schema["properties"]
+    assert "profiles" in schema["properties"]
+
+
+def test_cli_generate_schema_writes_to_file(tmp_path: Path) -> None:
+    output = tmp_path / "schema.json"
+    result = runner.invoke(app, ["generate-schema", "--output", str(output)])
+    assert result.exit_code == 0
+    assert output.exists()
+    schema = json.loads(output.read_text(encoding="utf-8"))
+    assert schema["$schema"] == "http://json-schema.org/draft-07/schema#"
 
 
 def test_cli_inspect_json_output(patch_config: MagicMock) -> None:

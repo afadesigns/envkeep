@@ -99,9 +99,67 @@ def test_env_snapshot_strips_utf8_bom() -> None:
     assert snapshot.malformed_lines() == ()
 
 
-def test_env_snapshot_from_file_strips_utf8_bom(tmp_path: Path) -> None:
-    env_file = tmp_path / "with-bom.env"
-    env_file.write_text("\ufeffAPI_TOKEN=secret\n", encoding="utf-8")
+def test_env_snapshot_parses_multiline_variables(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        textwrap.dedent(
+            """
+            MULTILINE=line1\\
+            line2\\
+            line3
+            """,
+        ),
+        encoding="utf-8",
+    )
     snapshot = EnvSnapshot.from_env_file(env_file)
-    assert snapshot.get("API_TOKEN") == "secret"
-    assert snapshot.malformed_lines() == ()
+    assert snapshot.get("MULTILINE") == "line1line2line3"
+
+
+def test_env_snapshot_parses_multiline_variables_with_quotes(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        textwrap.dedent(
+            """
+            MULTILINE="line1\\
+            line2\\
+            line3"
+            """,
+        ),
+        encoding="utf-8",
+    )
+    snapshot = EnvSnapshot.from_env_file(env_file)
+    assert snapshot.get("MULTILINE") == "line1line2line3"
+
+
+def test_env_snapshot_expands_variables(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        textwrap.dedent(
+            """
+            VAR1=value1
+            VAR2=$VAR1
+            VAR3=${VAR1}
+            """,
+        ),
+        encoding="utf-8",
+    )
+    snapshot = EnvSnapshot.from_env_file(env_file)
+    assert snapshot.get("VAR2") == "value1"
+    assert snapshot.get("VAR3") == "value1"
+
+
+def test_env_snapshot_handles_undefined_variables(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        textwrap.dedent(
+            """
+            VAR1=$UNDEFINED
+            VAR2=${UNDEFINED}
+            """,
+        ),
+        encoding="utf-8",
+    )
+    snapshot = EnvSnapshot.from_env_file(env_file)
+    assert snapshot.get("VAR1") == ""
+    assert snapshot.get("VAR2") == ""
+

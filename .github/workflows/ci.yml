@@ -21,79 +21,52 @@ jobs:
         python-version: ["3.11", "3.12"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5.1.0
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cache dependencies
-        uses: actions/cache@v4.0.2
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache uv http cache
+        uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-uv-
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install .[dev]
+        run: uv sync --dev
 
       - name: Scan for vulnerabilities
         run: |
-          pip install pip-audit
-          pip-audit
+          uv pip install pip-audit
+          uv run pip-audit
 
       - name: Ruff
         run: |
-          ruff check .
-          ruff format --check
+          uv run ruff check .
+          uv run ruff format --check
 
       - name: Mypy
-        run: mypy src
+        run: uv run mypy src
 
       - name: Pytest
-        run: pytest --cov=src --cov-report=xml
+        run: uv run pytest --cov=src --cov-report=xml
 
       - name: Upload coverage to Codecov
         if: runner.os == 'Linux'
-        uses: codecov/codecov-action@v4.5.0
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: true
-
-  docs:
-    name: Docs (build)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4.1.7
-
-      - name: Set up Python
-        uses: actions/setup-python@v5.1.0
-        with:
-          python-version: "3.12"
-
-      - name: Cache dependencies
-        uses: actions/cache@v4.0.2
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-docs-${{ hashFiles('**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-docs-
-
-      - name: Install docs dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install .[docs]
-
-      - name: Build documentation
-        run: mkdocs build --strict
 
   security:
     name: Security Scan
@@ -104,48 +77,38 @@ jobs:
       security-events: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3.25.11
+        uses: github/codeql-action/init@v3
         with:
           languages: python
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3.25.11
+        uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3.25.11
+        uses: github/codeql-action/analyze@v3
 
       - name: Semgrep
-        uses: semgrep/semgrep-action@v2.5.0
+        uses: semgrep/semgrep-action@v1
         with:
           config: "p/python"
 
+  docs:
+    name: Docs (build)
+    uses: ./.github/workflows/python-setup.yml
+    with:
+      python-version: "3.12"
+      cache-key-prefix: uv-docs
+      extras: "--extra docs"
+    secrets: inherit
+
   sbom:
     name: SBOM
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4.1.7
-
-      - name: Set up Python
-        uses: actions/setup-python@v5.1.0
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install .[dev]
-
-      - name: Generate SBOM
-        run: |
-          pip install cyclonedx-bom
-          cyclonedx-py --install-dir . --output sbom.json
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v4.3.3
-        with:
-          name: sbom
-          path: sbom.json
+    uses: ./.github/workflows/python-setup.yml
+    with:
+      python-version: "3.12"
+      cache-key-prefix: uv
+      extras: "--dev"
+    secrets: inherit
