@@ -267,6 +267,7 @@ class EnvSpec:
     profiles: list[ProfileSpec] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     imports: list[str] = field(default_factory=list)
+    tool_config: dict[str, Any] = field(default_factory=dict)
     _variable_cache: Mapping[str, VariableSpec] = field(init=False, repr=False)
     _profile_cache: Mapping[str, ProfileSpec] = field(init=False, repr=False)
     _variable_names: tuple[str, ...] = field(init=False, repr=False)
@@ -288,6 +289,7 @@ class EnvSpec:
         variables_data = data.get("variables", [])
         profiles_data = data.get("profiles", [])
         imports_data = data.get("imports", [])
+        tool_config = data.get("tool", {})
         env_spec_validators = data.get("validators", [])
         processed_variables_data = []
         for item in variables_data:
@@ -310,6 +312,7 @@ class EnvSpec:
             profiles=profiles,
             metadata=dict(metadata),
             imports=imports,
+            tool_config=dict(tool_config),
         )
 
     @classmethod

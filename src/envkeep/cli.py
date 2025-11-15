@@ -127,7 +127,7 @@ def _fetch_remote_values(
     """Fetch values from all remote backends defined in the spec."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    backends = load_backends()
+    backends = load_backends(spec.tool_config)
     if not backends:
         return {}
 
