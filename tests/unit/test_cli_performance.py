@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from envkeep.cli import _fetch_remote_values
+from envkeep.report import ValidationReport
 from envkeep.spec import EnvSpec
 
 
@@ -35,8 +36,9 @@ def test_fetch_remote_values_parallel(caplog):
         "envkeep.cli.load_backends",
         return_value={"mock1": mock_backend1, "mock2": mock_backend2},
     ):
+        report = ValidationReport()
         with caplog.at_level(logging.INFO):
-            result = _fetch_remote_values(spec)
+            result = _fetch_remote_values(spec, report, strict_plugins=False)
 
     assert result == {"VAR1": "value1", "VAR2": "value2"}
     assert mock_backend1.fetch.call_count == 1
@@ -53,7 +55,6 @@ def test_fetch_remote_values_with_errors(caplog):
             ],
         },
     )
-
     mock_backend1 = MagicMock()
     mock_backend1.fetch.return_value = {"VAR1": "value1"}
     mock_backend2 = MagicMock()
@@ -63,8 +64,9 @@ def test_fetch_remote_values_with_errors(caplog):
         "envkeep.cli.load_backends",
         return_value={"mock1": mock_backend1, "mock2": mock_backend2},
     ):
+        report = ValidationReport()
         with caplog.at_level(logging.ERROR):
-            result = _fetch_remote_values(spec)
+            result = _fetch_remote_values(spec, report, strict_plugins=False)
 
     assert result == {"VAR1": "value1"}
     assert "Plugin mock2 failed to fetch secrets" in caplog.text
